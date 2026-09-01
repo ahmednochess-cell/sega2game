@@ -648,16 +648,18 @@
                             console.log('🔍 In queue, checking for match...');
                             const registry = await getPlayerRegistry();
                             
-                            // Check for ANY waiting player (including the first one who might not have inGame=true yet)
+                            // Check for ANY waiting player
                             const waitingOthers = queue.filter(id =>
                                 id !== this.currentPlayer.id &&
                                 registry[id]
                             );
                             
                             console.log('👥 Waiting others:', waitingOthers);
+                            console.log('👤 Current player:', this.currentPlayer.id);
                             
                             if (waitingOthers.length > 0) {
                                 const opponentId = waitingOthers[0];
+                                console.log('🎯 Found opponent:', opponentId);
                                 
                                 // Remove both players from queue
                                 const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
@@ -678,7 +680,9 @@
 
                                 this.inQueue = false;
                                 showToast('Match found! Starting game...');
-                                this.startMatch(opponentId);
+                                
+                                // 🔥 CRITICAL FIX: Start the match immediately
+                                await this.startMatch(opponentId);
                             } else {
                                 console.log('⏳ No match found yet, still waiting...');
                             }
@@ -838,7 +842,7 @@
                         savePlayerRegistry(reg);
 
                         showToast('Match found! Starting game...');
-                        this.startMatch(opponentId);
+                        await this.startMatch(opponentId);
                         return;
                     }
 
@@ -920,17 +924,18 @@
                             savePlayerRegistry(reg);
                         }
                         showToast('Joining opponent...');
-                        this.startMatch(opponentId);
+                        await this.startMatch(opponentId);
                         return;
                     }
 
                     // Direct challenge
                     showToast('Starting match with ' + opponentId);
-                    this.startMatch(opponentId);
+                    await this.startMatch(opponentId);
                 },
 
                 // ---- Start Match ----
                 async startMatch(opponentId) {
+                    console.log('🚀 Starting match with:', opponentId);
                     const registry = await getPlayerRegistry();
                     const opponent = registry[opponentId];
                     if (!opponent) {
