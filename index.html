@@ -1,4 +1,4 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -10,7 +10,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
     <style>
-        /* ===== YOUR EXACT STYLES ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { background-color: rgba(255, 255, 255, 0.95); border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); width: 100%; max-width: 1000px; overflow: hidden; }
@@ -123,7 +122,7 @@
             <button class="tab-btn" data-tab="vsFriend">👥 vs Friend</button>
         </div>
 
-        <!-- VS AI TAB -->
+        <!-- VS AI TAB (DEFAULT) -->
         <div class="tab-content active" id="tab-vsAI">
             <div class="game-info">
                 <div class="status" id="statusAI">Your turn (X)</div>
@@ -330,8 +329,6 @@
             function saveQueue(queue) {
                 db.ref('queue').set(queue);
             }
-
-            // Removed subscribeQueue - we'll use a polling method instead for reliability
 
             function saveGame(player1Id, player2Id, data) {
                 db.ref('games/' + player1Id + '_' + player2Id).set(data);
@@ -608,7 +605,7 @@
                 }
             }
 
-            // ---- Online Manager (FIXED - uses polling for reliability) ----
+            // ---- Online Manager (FIXED - uses unified polling for both players) ----
             const onlineManager = {
                 currentPlayer: null,
                 game: null,
@@ -651,7 +648,7 @@
                     return this.currentPlayer;
                 },
 
-                // NEW: Queue polling system - much more reliable than event listeners
+                // UNIFIED queue polling system - works for both players
                 startQueuePolling() {
                     if (this.queuePollInterval) clearInterval(this.queuePollInterval);
                     this.queuePollInterval = setInterval(async () => {
