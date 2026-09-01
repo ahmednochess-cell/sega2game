@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+    <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
@@ -10,6 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
     <style>
+        /* ===== YOUR EXACT STYLES ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { background-color: rgba(255, 255, 255, 0.95); border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); width: 100%; max-width: 1000px; overflow: hidden; }
@@ -122,7 +123,7 @@
             <button class="tab-btn" data-tab="vsFriend">👥 vs Friend</button>
         </div>
 
-        <!-- VS AI TAB (DEFAULT) -->
+        <!-- VS AI TAB -->
         <div class="tab-content active" id="tab-vsAI">
             <div class="game-info">
                 <div class="status" id="statusAI">Your turn (X)</div>
@@ -272,7 +273,7 @@
 
     <script>
         // ============================================================
-        // FIREBASE CONFIG - YOUR EXACT CONFIG
+        // FIREBASE CONFIG
         // ============================================================
         const firebaseConfig = {
             apiKey: "AIzaSyDg9dSa4wWxH4M7QMlmOY2NB9himZxz74s",
@@ -306,7 +307,7 @@
             }
 
             // ============================================================
-            // 1. ONLINE SYSTEM - FIREBASE VERSION
+            // 1. ONLINE SYSTEM - FIREBASE VERSION (FIXED)
             // ============================================================
 
             const MY_ID_KEY = 'sega2_playerId';
@@ -330,11 +331,7 @@
                 db.ref('queue').set(queue);
             }
 
-            function subscribeQueue(callback) {
-                db.ref('queue').on('value', (snapshot) => {
-                    callback(snapshot.val() || []);
-                });
-            }
+            // Removed subscribeQueue - we'll use a polling method instead for reliability
 
             function saveGame(player1Id, player2Id, data) {
                 db.ref('games/' + player1Id + '_' + player2Id).set(data);
@@ -611,7 +608,7 @@
                 }
             }
 
-            // ---- Online Manager (FIXED) ----
+            // ---- Online Manager (FIXED - uses polling for reliability) ----
             const onlineManager = {
                 currentPlayer: null,
                 game: null,
@@ -619,9 +616,9 @@
                 mySide: null,
                 inQueue: false,
                 matchFound: false,
-                queueListener: null,
                 gameListener: null,
                 syncInterval: null,
+                queuePollInterval: null,
 
                 async init() {
                     this.currentPlayer = await getOrCreatePlayer();
@@ -636,58 +633,8 @@
                     await cleanQueue();
                     await this.checkForExistingGame();
 
-                    // Set up queue listener (IMPROVED)
-                    this.queueListener = subscribeQueue(async (queue) => {
-                        console.log('📋 Queue updated:', queue);
-                        
-                        if (!this.inQueue && !this.matchFound) {
-                            this.updateUI();
-                        }
-                        
-                        if (this.inQueue) {
-                            console.log('🔍 In queue, checking for match...');
-                            const registry = await getPlayerRegistry();
-                            
-                            // Check for ANY waiting player
-                            const waitingOthers = queue.filter(id =>
-                                id !== this.currentPlayer.id &&
-                                registry[id]
-                            );
-                            
-                            console.log('👥 Waiting others:', waitingOthers);
-                            console.log('👤 Current player:', this.currentPlayer.id);
-                            
-                            if (waitingOthers.length > 0) {
-                                const opponentId = waitingOthers[0];
-                                console.log('🎯 Found opponent:', opponentId);
-                                
-                                // Remove both players from queue
-                                const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
-                                saveQueue(newQueue);
-
-                                // Update player status
-                                const me = this.currentPlayer;
-                                me.waitingForMatch = false;
-                                const reg = await getPlayerRegistry();
-                                reg[me.id] = me;
-                                
-                                // Also mark opponent as no longer waiting
-                                if (reg[opponentId]) {
-                                    reg[opponentId].waitingForMatch = false;
-                                }
-                                
-                                savePlayerRegistry(reg);
-
-                                this.inQueue = false;
-                                showToast('Match found! Starting game...');
-                                
-                                // 🔥 CRITICAL FIX: Start the match immediately
-                                await this.startMatch(opponentId);
-                            } else {
-                                console.log('⏳ No match found yet, still waiting...');
-                            }
-                        }
-                    });
+                    // Start the queue polling system
+                    this.startQueuePolling();
 
                     this.updateUI();
                     this.renderBoard();
@@ -701,15 +648,67 @@
                         }
                     }, 2000);
 
-                    // Also check again after 5 seconds
-                    setTimeout(() => {
-                        if (!this.game && this.currentPlayer.opponentId) {
-                            console.log('⚠️ Second force check for existing game...');
-                            this.checkForExistingGame();
-                        }
-                    }, 5000);
-
                     return this.currentPlayer;
+                },
+
+                // NEW: Queue polling system - much more reliable than event listeners
+                startQueuePolling() {
+                    if (this.queuePollInterval) clearInterval(this.queuePollInterval);
+                    this.queuePollInterval = setInterval(async () => {
+                        // Only check if we're in the queue or if we're not in a game
+                        if (this.inQueue || (!this.matchFound && !this.currentPlayer.inGame)) {
+                            const queue = await getQueue();
+                            const registry = await getPlayerRegistry();
+                            
+                            // Clean queue of players who are no longer waiting
+                            const cleanQueueList = queue.filter(id => {
+                                const p = registry[id];
+                                return p && p.waitingForMatch && !p.inGame;
+                            });
+                            
+                            if (cleanQueueList.length !== queue.length) {
+                                saveQueue(cleanQueueList);
+                            }
+                            
+                            // Check if we're in the queue and there's another waiting player
+                            if (this.inQueue) {
+                                const waitingOthers = cleanQueueList.filter(id => 
+                                    id !== this.currentPlayer.id && 
+                                    registry[id] && 
+                                    registry[id].waitingForMatch &&
+                                    !registry[id].inGame
+                                );
+                                
+                                if (waitingOthers.length > 0) {
+                                    const opponentId = waitingOthers[0];
+                                    console.log('🎯 Queue polling found opponent:', opponentId);
+                                    
+                                    // Remove both players from queue
+                                    const newQueue = cleanQueueList.filter(id => 
+                                        id !== opponentId && id !== this.currentPlayer.id
+                                    );
+                                    saveQueue(newQueue);
+                                    
+                                    // Update player status
+                                    const me = this.currentPlayer;
+                                    me.waitingForMatch = false;
+                                    const reg = await getPlayerRegistry();
+                                    reg[me.id] = me;
+                                    if (reg[opponentId]) {
+                                        reg[opponentId].waitingForMatch = false;
+                                    }
+                                    savePlayerRegistry(reg);
+                                    
+                                    this.inQueue = false;
+                                    showToast('Match found! Starting game...');
+                                    await this.startMatch(opponentId);
+                                }
+                            }
+                            
+                            // Update UI with queue info
+                            this.updateUI();
+                        }
+                    }, 1000); // Check every second
                 },
 
                 async checkForExistingGame() {
@@ -734,7 +733,6 @@
                                 this.matchFound = true;
                                 this.inQueue = false;
                                 
-                                // Listen for game updates
                                 if (this.gameListener) {
                                     db.ref('games/' + me.id + '_' + me.opponentId).off();
                                 }
@@ -751,7 +749,6 @@
                         }
                     }
                     
-                    // Clear stale game data
                     if (me.opponentId) {
                         console.log('🧹 Clearing stale game data...');
                         deleteGame(me.id, me.opponentId);
@@ -826,19 +823,22 @@
                     const waitingPlayers = queue.filter(id =>
                         id !== this.currentPlayer.id &&
                         registry[id] &&
+                        registry[id].waitingForMatch &&
                         !registry[id].inGame
                     );
 
                     if (waitingPlayers.length > 0) {
                         const opponentId = waitingPlayers[0];
-                        queue = queue.filter(id => id !== opponentId);
-                        queue = queue.filter(id => id !== this.currentPlayer.id);
-                        saveQueue(queue);
+                        const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
+                        saveQueue(newQueue);
 
                         const me = this.currentPlayer;
                         me.waitingForMatch = false;
                         const reg = await getPlayerRegistry();
                         reg[me.id] = me;
+                        if (reg[opponentId]) {
+                            reg[opponentId].waitingForMatch = false;
+                        }
                         savePlayerRegistry(reg);
 
                         showToast('Match found! Starting game...');
@@ -910,10 +910,9 @@
 
                     // If opponent is in queue, match with them
                     let queue = await getQueue();
-                    if (queue.includes(opponentId)) {
-                        queue = queue.filter(id => id !== opponentId);
-                        queue = queue.filter(id => id !== this.currentPlayer.id);
-                        saveQueue(queue);
+                    if (queue.includes(opponentId) && opponent.waitingForMatch) {
+                        const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
+                        saveQueue(newQueue);
 
                         if (this.inQueue) {
                             this.inQueue = false;
@@ -923,6 +922,14 @@
                             reg[me.id] = me;
                             savePlayerRegistry(reg);
                         }
+                        
+                        // Mark opponent as not waiting
+                        const reg = await getPlayerRegistry();
+                        if (reg[opponentId]) {
+                            reg[opponentId].waitingForMatch = false;
+                        }
+                        savePlayerRegistry(reg);
+                        
                         showToast('Joining opponent...');
                         await this.startMatch(opponentId);
                         return;
@@ -962,7 +969,6 @@
                     this.matchFound = true;
                     this.game.saveToRegistry();
 
-                    // Listen for game updates
                     if (this.gameListener) {
                         db.ref('games/' + me.id + '_' + opponentId).off();
                     }
@@ -1754,6 +1760,25 @@
                 }
             }
 
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const side = e.currentTarget.dataset.side;
+                    setPlayerSide(side);
+                });
+            });
+
+            document.getElementById('resetAI').addEventListener('click', resetAI);
+
+            claimDrawAI.addEventListener('click', () => {
+                if (gameAI.drawAvailable && !gameAI.drawClaimed && !gameAI.gameOver) {
+                    gameAI.drawClaimed = true;
+                    gameAI.gameOver = true;
+                    claimDrawAI.classList.remove('visible');
+                    showResult('Draw!', 'You claimed a draw by repetition.', '⭐ 1500', '');
+                    renderAIBoard();
+                }
+            });
+
             // ============================================================
             // 3. VS FRIEND (UNCHANGED)
             // ============================================================
@@ -1918,6 +1943,17 @@
                 renderFriendBoard();
             }
 
+            document.getElementById('resetFriend').addEventListener('click', resetFriend);
+            claimDrawFriend.addEventListener('click', () => {
+                if (gameFriend.drawAvailable && !gameFriend.drawClaimed && !gameFriend.gameOver) {
+                    gameFriend.drawClaimed = true;
+                    gameFriend.gameOver = true;
+                    claimDrawFriend.classList.remove('visible');
+                    showResult('Draw!', 'Draw claimed by repetition.', '', '');
+                    renderFriendBoard();
+                }
+            });
+
             // ============================================================
             // 4. SHARED UI
             // ============================================================
@@ -1934,6 +1970,19 @@
                 gameOverlay.classList.add('active');
             }
 
+            document.getElementById('playAgainBtn').addEventListener('click', () => {
+                gameOverlay.classList.remove('active');
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (activeTab.dataset.tab === 'online') {
+                    onlineManager.leaveGame();
+                } else if (activeTab.dataset.tab === 'vsAI') {
+                    resetAI();
+                    choiceOverlay.classList.remove('hidden');
+                } else {
+                    resetFriend();
+                }
+            });
+
             // ============================================================
             // 5. EVENT LISTENERS
             // ============================================================
@@ -1949,6 +1998,8 @@
                     if (btn.dataset.tab === 'online') {
                         onlineManager.renderBoard();
                         onlineManager.updateUI();
+                        // HIDE the choice overlay when on Online tab
+                        document.getElementById('choiceOverlay').classList.add('hidden');
                     }
                     if (btn.dataset.tab === 'vsAI') {
                         if (!aiGameStarted) {
@@ -1956,7 +2007,11 @@
                         }
                         renderAIBoard();
                     }
-                    if (btn.dataset.tab === 'vsFriend') renderFriendBoard();
+                    if (btn.dataset.tab === 'vsFriend') {
+                        // HIDE the choice overlay when on Friend tab
+                        document.getElementById('choiceOverlay').classList.add('hidden');
+                        renderFriendBoard();
+                    }
                 });
             });
 
@@ -1988,56 +2043,10 @@
                 }
             });
 
-            // AI side choice
-            document.querySelectorAll('.choice-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const side = e.currentTarget.dataset.side;
-                    setPlayerSide(side);
-                });
-            });
-
-            document.getElementById('resetAI').addEventListener('click', resetAI);
-
-            claimDrawAI.addEventListener('click', () => {
-                if (gameAI.drawAvailable && !gameAI.drawClaimed && !gameAI.gameOver) {
-                    gameAI.drawClaimed = true;
-                    gameAI.gameOver = true;
-                    claimDrawAI.classList.remove('visible');
-                    showResult('Draw!', 'You claimed a draw by repetition.', '⭐ 1500', '');
-                    renderAIBoard();
-                }
-            });
-
-            // Friend
-            document.getElementById('resetFriend').addEventListener('click', resetFriend);
-            claimDrawFriend.addEventListener('click', () => {
-                if (gameFriend.drawAvailable && !gameFriend.drawClaimed && !gameFriend.gameOver) {
-                    gameFriend.drawClaimed = true;
-                    gameFriend.gameOver = true;
-                    claimDrawFriend.classList.remove('visible');
-                    showResult('Draw!', 'Draw claimed by repetition.', '', '');
-                    renderFriendBoard();
-                }
-            });
-
             // Help
             document.getElementById('helpOnline').addEventListener('click', () => {
                 alert(
                     'Online Play:\n\n- Your 5-digit ID is saved to your browser\n- Click "Find Opponent" to join the matchmaking queue\n- Or enter an opponent\'s ID and click "Join"\n- X starts, O goes second\n- Win = +10 Elo, Lose = -10 Elo\n- Draw claim after 5 repetitions');
-            });
-
-            // Play again
-            document.getElementById('playAgainBtn').addEventListener('click', () => {
-                gameOverlay.classList.remove('active');
-                const activeTab = document.querySelector('.tab-btn.active');
-                if (activeTab.dataset.tab === 'online') {
-                    onlineManager.leaveGame();
-                } else if (activeTab.dataset.tab === 'vsAI') {
-                    resetAI();
-                    choiceOverlay.classList.remove('hidden');
-                } else {
-                    resetFriend();
-                }
             });
 
             // ============================================================
@@ -2054,16 +2063,6 @@
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
             console.log('Players registered:', Object.keys(getPlayerRegistry()).length);
-
-            // Periodic queue sync
-            setInterval(() => {
-                getQueue().then(queue => {
-                    getPlayerRegistry().then(registry => {
-                        document.getElementById('debugInfo').textContent =
-                            `Queue: ${queue.length} | Players: ${Object.keys(registry).length}`;
-                    });
-                });
-            }, 5000);
         });
     </script>
 </body>
