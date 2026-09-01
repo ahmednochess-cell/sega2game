@@ -10,7 +10,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
     <style>
-        /* ALL YOUR EXISTING STYLES HERE - UNCHANGED */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .container { background-color: rgba(255, 255, 255, 0.95); border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); width: 100%; max-width: 1000px; overflow: hidden; }
@@ -637,33 +636,51 @@
                     await cleanQueue();
                     await this.checkForExistingGame();
 
-                    // Set up queue listener
+                    // Set up queue listener (IMPROVED)
                     this.queueListener = subscribeQueue(async (queue) => {
+                        console.log('📋 Queue updated:', queue);
+                        
                         if (!this.inQueue && !this.matchFound) {
                             this.updateUI();
                         }
+                        
                         if (this.inQueue) {
+                            console.log('🔍 In queue, checking for match...');
                             const registry = await getPlayerRegistry();
+                            
+                            // Check for ANY waiting player (including the first one who might not have inGame=true yet)
                             const waitingOthers = queue.filter(id =>
                                 id !== this.currentPlayer.id &&
-                                registry[id] &&
-                                !registry[id].inGame
+                                registry[id]
                             );
+                            
+                            console.log('👥 Waiting others:', waitingOthers);
+                            
                             if (waitingOthers.length > 0) {
                                 const opponentId = waitingOthers[0];
-                                const newQueue = queue.filter(id => id !== opponentId);
-                                const finalQueue = newQueue.filter(id => id !== this.currentPlayer.id);
-                                saveQueue(finalQueue);
+                                
+                                // Remove both players from queue
+                                const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
+                                saveQueue(newQueue);
 
+                                // Update player status
                                 const me = this.currentPlayer;
                                 me.waitingForMatch = false;
                                 const reg = await getPlayerRegistry();
                                 reg[me.id] = me;
+                                
+                                // Also mark opponent as no longer waiting
+                                if (reg[opponentId]) {
+                                    reg[opponentId].waitingForMatch = false;
+                                }
+                                
                                 savePlayerRegistry(reg);
 
                                 this.inQueue = false;
                                 showToast('Match found! Starting game...');
                                 this.startMatch(opponentId);
+                            } else {
+                                console.log('⏳ No match found yet, still waiting...');
                             }
                         }
                     });
@@ -672,7 +689,7 @@
                     this.renderBoard();
                     this.startSync();
 
-                    // 🔥 FIX: Force check for game after 2 seconds (for Device 2)
+                    // Force check for game after 2 seconds
                     setTimeout(() => {
                         if (!this.game && this.currentPlayer.opponentId) {
                             console.log('⚠️ Force checking for existing game...');
@@ -680,7 +697,7 @@
                         }
                     }, 2000);
 
-                    // 🔥 FIX: Also check again after 5 seconds
+                    // Also check again after 5 seconds
                     setTimeout(() => {
                         if (!this.game && this.currentPlayer.opponentId) {
                             console.log('⚠️ Second force check for existing game...');
@@ -836,6 +853,9 @@
                     if (!queue.includes(me.id)) {
                         queue.push(me.id);
                         saveQueue(queue);
+                        console.log('✅ Added to queue:', queue);
+                    } else {
+                        console.log('⚠️ Already in queue:', queue);
                     }
                     this.inQueue = true;
                     showToast('Searching for opponent...');
