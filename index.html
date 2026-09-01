@@ -780,6 +780,2518 @@
 
     <script>
         // ============================================================
+        // FIREBASE CONFIG - YOUR EXACT CONFIG
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDg9dSa4wWxH4M7QMlmOY2NB9himZxz74s",
+            authDomain: "sega2-2.firebaseapp.com",
+            databaseURL: "https://sega2-2-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "sega2-2",
+            storageBucket: "sega2-2.firebasestorage.app",
+            messagingSenderId: "1060073676141",
+            appId: "1:1060073676141:web:e317f501f388ebb6020e64"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        console.log('🔥 Firebase connected!');
+
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // ============================================================
+            // TOAST NOTIFICATION
+            // ============================================================
+            const toastEl = document.getElementById('toast');
+            let toastTimeout;
+
+            function showToast(msg, duration = 3000) {
+                toastEl.textContent = msg;
+                toastEl.classList.add('show');
+                clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => {
+                    toastEl.classList.remove('show');
+                }, duration);
+            }
+
+            // ============================================================
+            // 1. ONLINE SYSTEM - FIREBASE VERSION (FULL ORIGINAL)
+            // ============================================================
+
+            const MY_ID_KEY = 'sega2_playerId';
+
+            // --- Firebase Storage Functions ---
+            async function getPlayerRegistry() {
+                const snapshot = await db.ref('players').once('value');
+                return snapshot.val() || {};
+            }
+
+            function savePlayerRegistry(registry) {
+                db.ref('players').set(registry);
+            }
+
+            async function getQueue() {
+                const snapshot = await db.ref('queue').once('value');
+                return snapshot.val() || [];
+            }
+
+            function saveQueue(queue) {
+                db.ref('queue').set(queue);
+            }
+
+            function subscribeQueue(callback) {
+                db.ref('queue').on('value', (snapshot) => {
+                    callback(snapshot.val() || []);
+                });
+            }
+
+            function saveGame(player1Id, player2Id, data) {
+                db.ref('games/' + player1Id + '_' + player2Id).set(data);
+            }
+
+            async function loadGame(player1Id, player2Id) {
+                const snapshot = await db.ref('games/' + player1Id + '_' + player2Id).once('value');
+                return snapshot.val();
+            }
+
+            function deleteGame(player1Id, player2Id) {
+                db.ref('games/' + player1Id + '_' + player2Id).remove();
+            }
+
+            function subscribeGame(player1Id, player2Id, callback) {
+                db.ref('games/' + player1Id + '_' + player2Id).on('value', (snapshot) => {
+                    callback(snapshot.val());
+                });
+            }
+
+            function generateId() {
+                let id;
+                let attempts = 0;
+                do {
+                    id = String(Math.floor(10000 + Math.random() * 90000));
+                    attempts++;
+                } while (attempts < 100);
+                return id;
+            }
+
+            async function getOrCreatePlayer() {
+                const registry = await getPlayerRegistry();
+                let savedId = localStorage.getItem(MY_ID_KEY);
+
+                if (savedId && registry[savedId]) {
+                    const player = registry[savedId];
+                    if (!player.elo) player.elo = 1500;
+                    if (!player.gamesPlayed) player.gamesPlayed = 0;
+                    if (!player.wins) player.wins = 0;
+                    if (!player.losses) player.losses = 0;
+                    if (!player.draws) player.draws = 0;
+                    player.inGame = false;
+                    player.opponentId = null;
+                    player.side = null;
+                    player.waitingForMatch = false;
+                    registry[savedId] = player;
+                    savePlayerRegistry(registry);
+                    return player;
+                }
+
+                const id = generateId();
+                const player = {
+                    id,
+                    elo: 1500,
+                    gamesPlayed: 0,
+                    wins: 0,
+                    losses: 0,
+                    draws: 0,
+                    inGame: false,
+                    opponentId: null,
+                    side: null,
+                    waitingForMatch: false
+                };
+                registry[id] = player;
+                localStorage.setItem(MY_ID_KEY, id);
+                savePlayerRegistry(registry);
+                return player;
+            }
+
+            async function cleanQueue() {
+                const registry = await getPlayerRegistry();
+                let queue = await getQueue();
+                queue = queue.filter(id => {
+                    const p = registry[id];
+                    return p && !p.inGame && p.waitingForMatch;
+                });
+                saveQueue(queue);
+                return queue;
+            }
+
+            // ---- Online Game ----
+            class OnlineGame {
+                constructor(player1Id, player2Id) {
+                    this.player1Id = player1Id;
+                    this.player2Id = player2Id;
+                    this.board = [
+                        ['X', 'X', 'X'],
+                        ['', '', ''],
+                        ['O', 'O', 'O']
+                    ];
+                    this.hasMoved = [
+                        [false, false, false],
+                        [false, false, false],
+                        [false, false, false]
+                    ];
+                    this.currentPlayer = 'X';
+                    this.gameOver = false;
+                    this.selectedCell = null;
+                    this.validMoves = [];
+                    this.positionHistory = [];
+                    this.positionCounts = {};
+                    this.drawAvailable = false;
+                    this.drawClaimed = false;
+                    this.winner = null;
+                    this.moveHistory = [];
+                    const sides = ['X', 'O'];
+                    const shuffled = sides.sort(() => Math.random() - 0.5);
+                    this.p1Side = shuffled[0];
+                    this.p2Side = shuffled[1];
+
+                    this.updatePlayers();
+                    this.saveToRegistry();
+                }
+
+                async updatePlayers() {
+                    const registry = await getPlayerRegistry();
+                    if (registry[this.player1Id]) {
+                        registry[this.player1Id].side = this.p1Side;
+                        registry[this.player1Id].opponentId = this.player2Id;
+                        registry[this.player1Id].inGame = true;
+                        registry[this.player1Id].waitingForMatch = false;
+                    }
+                    if (registry[this.player2Id]) {
+                        registry[this.player2Id].side = this.p2Side;
+                        registry[this.player2Id].opponentId = this.player1Id;
+                        registry[this.player2Id].inGame = true;
+                        registry[this.player2Id].waitingForMatch = false;
+                    }
+                    savePlayerRegistry(registry);
+                }
+
+                getPositionKey() {
+                    let key = '';
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            key += this.board[r][c] || '-';
+                            key += this.hasMoved[r][c] ? '1' : '0';
+                        }
+                    }
+                    return key + this.currentPlayer;
+                }
+
+                isBoardFull() {
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            if (this.board[r][c] === '') return false;
+                        }
+                    }
+                    return true;
+                }
+
+                getWinningLine(player) {
+                    const b = this.board,
+                        m = this.hasMoved;
+                    for (let r = 0; r < 3; r++) {
+                        if (b[r][0] === player && b[r][1] === player && b[r][2] === player) {
+                            if (m[r][0] && m[r][1] && m[r][2]) return [{ row: r, col: 0 }, { row: r, col: 1 }, { row: r,
+                                    col: 2 }];
+                        }
+                    }
+                    for (let c = 0; c < 3; c++) {
+                        if (b[0][c] === player && b[1][c] === player && b[2][c] === player) {
+                            if (m[0][c] && m[1][c] && m[2][c]) return [{ row: 0, col: c }, { row: 1, col: c }, { row: 2,
+                                    col: c }];
+                        }
+                    }
+                    if (b[0][0] === player && b[1][1] === player && b[2][2] === player) {
+                        if (m[0][0] && m[1][1] && m[2][2]) return [{ row: 0, col: 0 }, { row: 1, col: 1 }, { row: 2,
+                                col: 2 }];
+                    }
+                    if (b[0][2] === player && b[1][1] === player && b[2][0] === player) {
+                        if (m[0][2] && m[1][1] && m[2][0]) return [{ row: 0, col: 2 }, { row: 1, col: 1 }, { row: 2,
+                                col: 0 }];
+                    }
+                    return null;
+                }
+
+                checkWin(player) {
+                    return this.getWinningLine(player) !== null;
+                }
+
+                getValidMoves(row, col) {
+                    const moves = [];
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            if (this.board[r][c] === '') moves.push({ row: r, col: c });
+                        }
+                    }
+                    return moves;
+                }
+
+                checkAndOfferDraw() {
+                    const key = this.getPositionKey();
+                    this.positionHistory.push(key);
+                    this.positionCounts[key] = (this.positionCounts[key] || 0) + 1;
+                    if (this.positionCounts[key] >= 5 && !this.drawClaimed && !this.gameOver) {
+                        this.drawAvailable = true;
+                        return true;
+                    }
+                    return false;
+                }
+
+                claimDraw() {
+                    if (this.drawAvailable && !this.drawClaimed && !this.gameOver) {
+                        this.drawClaimed = true;
+                        this.gameOver = true;
+                        this.winner = 'draw';
+                        return true;
+                    }
+                    return false;
+                }
+
+                makeMove(fromRow, fromCol, toRow, toCol) {
+                    if (this.gameOver) return false;
+                    const player = this.board[fromRow][fromCol];
+                    if (!player || player !== this.currentPlayer) return false;
+                    if (this.board[toRow][toCol] !== '') return false;
+
+                    this.board[toRow][toCol] = player;
+                    this.board[fromRow][fromCol] = '';
+                    this.hasMoved[toRow][toCol] = true;
+                    this.moveHistory.push({ from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol },
+                        player });
+
+                    this.checkAndOfferDraw();
+
+                    if (this.checkWin(player)) {
+                        this.gameOver = true;
+                        this.winner = player;
+                        return true;
+                    }
+
+                    if (this.isBoardFull()) {
+                        this.gameOver = true;
+                        this.winner = 'draw';
+                        return true;
+                    }
+
+                    this.currentPlayer = (this.currentPlayer === 'X' ? 'O' : 'X');
+                    return true;
+                }
+
+                getSide(playerId) {
+                    if (playerId === this.player1Id) return this.p1Side;
+                    if (playerId === this.player2Id) return this.p2Side;
+                    return null;
+                }
+
+                getOpponentId(playerId) {
+                    if (playerId === this.player1Id) return this.player2Id;
+                    if (playerId === this.player2Id) return this.player1Id;
+                    return null;
+                }
+
+                saveToRegistry() {
+                    saveGame(this.player1Id, this.player2Id, {
+                        board: this.board,
+                        hasMoved: this.hasMoved,
+                        currentPlayer: this.currentPlayer,
+                        gameOver: this.gameOver,
+                        winner: this.winner,
+                        positionHistory: this.positionHistory,
+                        positionCounts: this.positionCounts,
+                        drawAvailable: this.drawAvailable,
+                        drawClaimed: this.drawClaimed,
+                        p1Side: this.p1Side,
+                        p2Side: this.p2Side,
+                        moveHistory: this.moveHistory
+                    });
+                }
+
+                deleteFromRegistry() {
+                    deleteGame(this.player1Id, this.player2Id);
+                }
+            }
+
+            // ---- Online Manager ----
+            const onlineManager = {
+                currentPlayer: null,
+                game: null,
+                opponentId: null,
+                mySide: null,
+                inQueue: false,
+                matchFound: false,
+                queueListener: null,
+                gameListener: null,
+                syncInterval: null,
+
+                async init() {
+                    this.currentPlayer = await getOrCreatePlayer();
+                    this.currentPlayer.inGame = false;
+                    this.currentPlayer.opponentId = null;
+                    this.currentPlayer.side = null;
+                    this.currentPlayer.waitingForMatch = false;
+                    const registry = await getPlayerRegistry();
+                    registry[this.currentPlayer.id] = this.currentPlayer;
+                    savePlayerRegistry(registry);
+
+                    await cleanQueue();
+                    await this.checkForExistingGame();
+
+                    // Set up queue listener
+                    this.queueListener = subscribeQueue(async (queue) => {
+                        if (!this.inQueue && !this.matchFound) {
+                            this.updateUI();
+                        }
+                        if (this.inQueue) {
+                            const registry = await getPlayerRegistry();
+                            const waitingOthers = queue.filter(id =>
+                                id !== this.currentPlayer.id &&
+                                registry[id] &&
+                                !registry[id].inGame
+                            );
+                            if (waitingOthers.length > 0) {
+                                const opponentId = waitingOthers[0];
+                                const newQueue = queue.filter(id => id !== opponentId);
+                                const finalQueue = newQueue.filter(id => id !== this.currentPlayer.id);
+                                saveQueue(finalQueue);
+
+                                const me = this.currentPlayer;
+                                me.waitingForMatch = false;
+                                const reg = await getPlayerRegistry();
+                                reg[me.id] = me;
+                                savePlayerRegistry(reg);
+
+                                this.inQueue = false;
+                                showToast('Match found! Starting game...');
+                                this.startMatch(opponentId);
+                            }
+                        }
+                    });
+
+                    this.updateUI();
+                    this.renderBoard();
+                    this.startSync();
+                    
+                    // FORCE CHECK: If we're supposed to be in a game but it's not loaded
+                    setTimeout(() => {
+                        if (!this.game && this.currentPlayer.opponentId) {
+                            console.log('⚠️ Forcing game check...');
+                            this.checkForExistingGame();
+                        }
+                    }, 3000);
+                    
+                    return this.currentPlayer;
+                },
+
+                async checkForExistingGame() {
+                    const registry = await getPlayerRegistry();
+                    const me = this.currentPlayer;
+                    console.log('🔍 Checking for existing game...', me.opponentId);
+                    
+                    if (me.opponentId && registry[me.opponentId]) {
+                        const opp = registry[me.opponentId];
+                        console.log('👤 Opponent found:', opp);
+                        
+                        if (opp.inGame) {
+                            const gameData = await loadGame(me.id, me.opponentId);
+                            console.log('📦 Game data loaded:', gameData);
+                            
+                            if (gameData) {
+                                // Create game object
+                                this.game = new OnlineGame(me.id, me.opponentId);
+                                Object.assign(this.game, gameData);
+                                this.opponentId = me.opponentId;
+                                this.mySide = this.game.getSide(me.id);
+                                this.matchFound = true;
+                                this.inQueue = false;
+                                
+                                // Listen for game updates
+                                if (this.gameListener) {
+                                    db.ref('games/' + me.id + '_' + me.opponentId).off();
+                                }
+                                this.gameListener = subscribeGame(me.id, me.opponentId, (data) => {
+                                    console.log('📡 Game update received:', data);
+                                    if (data) this.syncGameData(data);
+                                });
+                                
+                                this.renderBoard();
+                                this.updateUI();
+                                showToast('Game resumed!');
+                                return;
+                            }
+                        }
+                    }
+                    
+                    // Clear stale game data
+                    if (me.opponentId) {
+                        deleteGame(me.id, me.opponentId);
+                        me.opponentId = null;
+                        me.inGame = false;
+                        me.side = null;
+                        const reg = await getPlayerRegistry();
+                        reg[me.id] = me;
+                        savePlayerRegistry(reg);
+                    }
+                    console.log('❌ No existing game found');
+                },
+
+                startSync() {
+                    if (this.syncInterval) clearInterval(this.syncInterval);
+                    this.syncInterval = setInterval(() => {
+                        this.syncGameState();
+                    }, 2000);
+                },
+
+                syncGameState() {
+                    if (!this.game || this.game.gameOver) return;
+                    this.game.saveToRegistry();
+                },
+
+                syncGameData(data) {
+                    if (!this.game || this.game.gameOver) return;
+                    console.log('🔄 Syncing game data...');
+                    if (data && data.moveHistory && data.moveHistory.length > this.game.moveHistory.length) {
+                        this.game.board = data.board;
+                        this.game.hasMoved = data.hasMoved;
+                        this.game.currentPlayer = data.currentPlayer;
+                        this.game.gameOver = data.gameOver;
+                        this.game.winner = data.winner;
+                        this.game.positionHistory = data.positionHistory || [];
+                        this.game.positionCounts = data.positionCounts || {};
+                        this.game.drawAvailable = data.drawAvailable || false;
+                        this.game.drawClaimed = data.drawClaimed || false;
+                        this.game.moveHistory = data.moveHistory || [];
+                        this.renderBoard();
+
+                        if (this.game.gameOver) {
+                            this.handleGameEnd();
+                            return;
+                        }
+
+                        if (this.game.currentPlayer === this.mySide) {
+                            this.updateUI();
+                        } else {
+                            setTimeout(() => this.simulateOpponentMove(), 600);
+                        }
+                    }
+                },
+
+                // ---- Find Opponent ----
+                async findOpponent() {
+                    if (this.inQueue) {
+                        this.leaveQueue();
+                        return;
+                    }
+
+                    if (this.matchFound || this.currentPlayer.inGame) {
+                        showToast('You are already in a game!');
+                        return;
+                    }
+
+                    await cleanQueue();
+                    const registry = await getPlayerRegistry();
+                    let queue = await getQueue();
+
+                    // Check for waiting players
+                    const waitingPlayers = queue.filter(id =>
+                        id !== this.currentPlayer.id &&
+                        registry[id] &&
+                        !registry[id].inGame
+                    );
+
+                    if (waitingPlayers.length > 0) {
+                        const opponentId = waitingPlayers[0];
+                        queue = queue.filter(id => id !== opponentId);
+                        queue = queue.filter(id => id !== this.currentPlayer.id);
+                        saveQueue(queue);
+
+                        const me = this.currentPlayer;
+                        me.waitingForMatch = false;
+                        const reg = await getPlayerRegistry();
+                        reg[me.id] = me;
+                        savePlayerRegistry(reg);
+
+                        showToast('Match found! Starting game...');
+                        this.startMatch(opponentId);
+                        return;
+                    }
+
+                    // Add to queue
+                    const me = this.currentPlayer;
+                    me.waitingForMatch = true;
+                    const reg = await getPlayerRegistry();
+                    reg[me.id] = me;
+                    savePlayerRegistry(reg);
+
+                    queue = await getQueue();
+                    if (!queue.includes(me.id)) {
+                        queue.push(me.id);
+                        saveQueue(queue);
+                    }
+                    this.inQueue = true;
+                    showToast('Searching for opponent...');
+                    this.updateUI();
+                },
+
+                leaveQueue() {
+                    this.inQueue = false;
+                    const me = this.currentPlayer;
+                    me.waitingForMatch = false;
+                    const reg = getPlayerRegistry();
+                    reg[me.id] = me;
+                    savePlayerRegistry(reg);
+
+                    getQueue().then(queue => {
+                        const newQueue = queue.filter(id => id !== me.id);
+                        saveQueue(newQueue);
+                    });
+
+                    showToast('Left queue');
+                    this.updateUI();
+                    this.renderBoard();
+                },
+
+                // ---- Join Opponent ----
+                async joinOpponent(opponentId) {
+                    if (!opponentId || opponentId.length !== 5) {
+                        showToast('Please enter a valid 5-digit ID');
+                        return;
+                    }
+
+                    if (opponentId === this.currentPlayer.id) {
+                        showToast('You cannot play against yourself!');
+                        return;
+                    }
+
+                    const registry = await getPlayerRegistry();
+                    const opponent = registry[opponentId];
+                    if (!opponent) {
+                        showToast('Player not found! Make sure the ID is correct.');
+                        return;
+                    }
+
+                    if (opponent.inGame) {
+                        showToast('This player is already in a game!');
+                        return;
+                    }
+
+                    // If opponent is in queue, match with them
+                    let queue = await getQueue();
+                    if (queue.includes(opponentId)) {
+                        queue = queue.filter(id => id !== opponentId);
+                        queue = queue.filter(id => id !== this.currentPlayer.id);
+                        saveQueue(queue);
+
+                        if (this.inQueue) {
+                            this.inQueue = false;
+                            const me = this.currentPlayer;
+                            me.waitingForMatch = false;
+                            const reg = await getPlayerRegistry();
+                            reg[me.id] = me;
+                            savePlayerRegistry(reg);
+                        }
+                        showToast('Joining opponent...');
+                        this.startMatch(opponentId);
+                        return;
+                    }
+
+                    // Direct challenge
+                    showToast('Starting match with ' + opponentId);
+                    this.startMatch(opponentId);
+                },
+
+                // ---- Start Match ----
+                async startMatch(opponentId) {
+                    const registry = await getPlayerRegistry();
+                    const opponent = registry[opponentId];
+                    if (!opponent) {
+                        showToast('Opponent not found!');
+                        return;
+                    }
+
+                    this.game = new OnlineGame(this.currentPlayer.id, opponentId);
+                    this.mySide = this.game.getSide(this.currentPlayer.id);
+                    this.opponentId = opponentId;
+
+                    const me = this.currentPlayer;
+                    me.inGame = true;
+                    me.opponentId = opponentId;
+                    me.side = this.mySide;
+                    me.waitingForMatch = false;
+
+                    const reg = await getPlayerRegistry();
+                    reg[me.id] = me;
+                    reg[opponentId] = opponent;
+                    savePlayerRegistry(reg);
+
+                    this.inQueue = false;
+                    this.matchFound = true;
+                    this.game.saveToRegistry();
+
+                    // Listen for game updates
+                    if (this.gameListener) {
+                        db.ref('games/' + me.id + '_' + opponentId).off();
+                    }
+                    this.gameListener = subscribeGame(me.id, opponentId, (data) => {
+                        console.log('📡 Game update received in startMatch:', data);
+                        if (data) this.syncGameData(data);
+                    });
+
+                    this.updateUI();
+                    this.renderBoard();
+                    showToast('Game started! You are ' + this.mySide);
+
+                    if (this.mySide === 'O') {
+                        setTimeout(() => this.simulateOpponentMove(), 800);
+                    }
+                },
+
+                // ---- Simulate Opponent ----
+                simulateOpponentMove() {
+                    if (!this.game || this.game.gameOver) return;
+                    if (this.game.currentPlayer === this.mySide) return;
+
+                    const opponentId = this.opponentId;
+                    const opponentSide = this.game.getSide(opponentId);
+
+                    const moves = this.getAllPossibleMoves(this.game, opponentSide);
+                    if (moves.length === 0) return;
+
+                    let bestMove = moves[0];
+                    let bestScore = -Infinity;
+
+                    for (const move of moves) {
+                        const { from, to } = move;
+                        let score = 0;
+                        if (to.row === 1 && to.col === 1) score += 10;
+                        if (!this.game.hasMoved[from.row][from.col]) score += 5;
+                        score += Math.random() * 3;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMove = move;
+                        }
+                    }
+
+                    this.game.makeMove(bestMove.from.row, bestMove.from.col, bestMove.to.row, bestMove.to.col);
+                    this.game.saveToRegistry();
+                    this.renderBoard();
+
+                    if (this.game.gameOver) {
+                        this.handleGameEnd();
+                        return;
+                    }
+
+                    if (this.game.currentPlayer === this.mySide) {
+                        this.updateUI();
+                    } else {
+                        setTimeout(() => this.simulateOpponentMove(), 600);
+                    }
+                },
+
+                getAllPossibleMoves(game, player) {
+                    const moves = [];
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            if (game.board[r][c] === player) {
+                                for (let tr = 0; tr < 3; tr++) {
+                                    for (let tc = 0; tc < 3; tc++) {
+                                        if (game.board[tr][tc] === '') {
+                                            moves.push({ from: { row: r, col: c }, to: { row: tr, col: tc } });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return moves;
+                },
+
+                // ---- Handle Game End ----
+                async handleGameEnd() {
+                    const game = this.game;
+                    if (!game || !game.gameOver) return;
+
+                    const myId = this.currentPlayer.id;
+                    const oppId = this.opponentId;
+                    const registry = await getPlayerRegistry();
+                    const me = registry[myId];
+                    const opp = registry[oppId];
+
+                    if (!me || !opp) return;
+
+                    let result = null;
+                    if (game.winner === 'draw') {
+                        result = 'draw';
+                    } else if (game.winner === this.mySide) {
+                        result = 'win';
+                    } else {
+                        result = 'loss';
+                    }
+
+                    const K = 32;
+                    let change = 0;
+                    if (result === 'win') {
+                        const expected = 1 / (1 + Math.pow(10, (opp.elo - me.elo) / 400));
+                        change = Math.round(K * (1 - expected));
+                        me.elo += change;
+                        opp.elo -= change;
+                        me.wins++;
+                        opp.losses++;
+                    } else if (result === 'loss') {
+                        const expected = 1 / (1 + Math.pow(10, (me.elo - opp.elo) / 400));
+                        change = Math.round(K * (1 - expected));
+                        me.elo -= change;
+                        opp.elo += change;
+                        me.losses++;
+                        opp.wins++;
+                    } else {
+                        me.draws++;
+                        opp.draws++;
+                    }
+                    me.gamesPlayed++;
+                    opp.gamesPlayed++;
+
+                    me.inGame = false;
+                    me.opponentId = null;
+                    me.side = null;
+                    opp.inGame = false;
+                    opp.opponentId = null;
+                    opp.side = null;
+
+                    savePlayerRegistry(registry);
+                    game.deleteFromRegistry();
+
+                    const title = result === 'win' ? 'You Win! 🎉' :
+                        result === 'loss' ? 'You Lose 😢' : 'Draw! 🤝';
+                    const msg = result === 'win' ? `+${change} Elo` :
+                        result === 'loss' ? `-${change} Elo` : 'No Elo change';
+                    const eloMsg = `⭐ ${me.elo}`;
+
+                    showResult(title, `Game over!`, eloMsg, msg);
+
+                    this.matchFound = false;
+                    this.game = null;
+                    this.opponentId = null;
+                    this.mySide = null;
+                    this.updateUI();
+                    this.renderBoard();
+                },
+
+                // ---- Leave Game ----
+                async leaveGame() {
+                    if (this.game && !this.game.gameOver) {
+                        this.game.gameOver = true;
+                        this.game.winner = this.game.getSide(this.opponentId);
+                        await this.handleGameEnd();
+                        return;
+                    }
+                    if (this.game) {
+                        this.game.deleteFromRegistry();
+                    }
+                    this.matchFound = false;
+                    this.game = null;
+                    this.opponentId = null;
+                    this.mySide = null;
+
+                    const me = this.currentPlayer;
+                    me.inGame = false;
+                    me.opponentId = null;
+                    me.side = null;
+                    const registry = await getPlayerRegistry();
+                    registry[me.id] = me;
+                    savePlayerRegistry(registry);
+
+                    this.updateUI();
+                    this.renderBoard();
+                    showToast('Left game');
+                },
+
+                // ---- UI ----
+                updateUI() {
+                    const me = this.currentPlayer;
+                    document.getElementById('myIdDisplay').textContent = `ID: ${me.id}`;
+                    document.getElementById('myEloDisplay').textContent = `⭐ ${me.elo}`;
+
+                    const status = document.getElementById('onlineStatus');
+                    const queueStatus = document.getElementById('queueStatus');
+                    const debugInfo = document.getElementById('debugInfo');
+
+                    getQueue().then(queue => {
+                        if (this.inQueue) {
+                            status.textContent = '⏳ In Queue...';
+                            status.className = 'online-status waiting';
+                            queueStatus.textContent = `🔍 Searching... (${queue.length} in queue)`;
+                        } else if (this.matchFound || this.currentPlayer.inGame) {
+                            status.textContent = '● In Game';
+                            status.className = 'online-status ingame';
+                            queueStatus.textContent = this.game && !this.game.gameOver ?
+                                `Playing as ${this.mySide}` : 'Game ended';
+                        } else {
+                            status.textContent = '● Online';
+                            status.className = 'online-status';
+                            queueStatus.textContent = queue.length > 0 ? `${queue.length} player(s) waiting` : '';
+                        }
+
+                        getPlayerRegistry().then(registry => {
+                            debugInfo.textContent = `Queue: ${queue.length} | Players: ${Object.keys(registry).length}`;
+                        });
+
+                        const findBtn = document.getElementById('findOpponentBtn');
+                        if (this.inQueue) {
+                            findBtn.textContent = '⏹ Cancel';
+                            findBtn.className = 'btn-find cancel';
+                            findBtn.disabled = false;
+                        } else if (this.matchFound || this.currentPlayer.inGame) {
+                            findBtn.textContent = '🔍 In Game';
+                            findBtn.className = 'btn-find';
+                            findBtn.disabled = true;
+                        } else {
+                            findBtn.textContent = '🔍 Find Opponent';
+                            findBtn.className = 'btn-find';
+                            findBtn.disabled = false;
+                        }
+                    });
+                },
+
+                // ---- Render Board ----
+                renderBoard() {
+                    const game = this.game;
+                    const boardEl = document.getElementById('boardOnline');
+                    const statusEl = document.getElementById('statusOnline');
+                    const claimBtn = document.getElementById('claimDrawOnline');
+
+                    console.log('🎨 Rendering board, game:', game);
+
+                    if (!game) {
+                        boardEl.innerHTML =
+                            '<div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Waiting for opponent...</div>';
+                        statusEl.textContent = 'Waiting for opponent...';
+                        claimBtn.classList.remove('visible');
+                        return;
+                    }
+
+                    boardEl.innerHTML = '';
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            const cell = document.createElement('div');
+                            cell.className = 'cell';
+                            cell.dataset.row = r;
+                            cell.dataset.col = c;
+                            const val = game.board[r][c];
+                            if (val) {
+                                cell.textContent = val;
+                                cell.classList.add(val);
+                                if (!game.hasMoved[r][c]) cell.classList.add('inactive');
+                            }
+                            if (game.selectedCell && game.selectedCell.row === r && game.selectedCell.col === c) {
+                                cell.classList.add('selected');
+                            }
+                            if (game.validMoves && game.validMoves.some(m => m.row === r && m.col === c)) {
+                                cell.classList.add('valid-move');
+                            }
+                            cell.addEventListener('click', () => this.handleClick(r, c));
+                            boardEl.appendChild(cell);
+                        }
+                    }
+
+                    if (game.gameOver) {
+                        statusEl.textContent = 'Game Over';
+                    } else if (game.currentPlayer === this.mySide) {
+                        statusEl.textContent = `Your turn (${this.mySide})`;
+                    } else {
+                        statusEl.textContent = `Opponent's turn... (${game.currentPlayer})`;
+                    }
+
+                    if (game.drawAvailable && !game.drawClaimed && !game.gameOver) {
+                        claimBtn.classList.add('visible');
+                    } else {
+                        claimBtn.classList.remove('visible');
+                    }
+
+                    const mySide = this.mySide;
+                    const p1 = document.getElementById('playerXOnline');
+                    const p2 = document.getElementById('playerOOnline');
+                    if (mySide === 'X') {
+                        p1.querySelector('h3').textContent = 'You (X)';
+                        p2.querySelector('h3').textContent = 'Opponent (O)';
+                    } else if (mySide === 'O') {
+                        p1.querySelector('h3').textContent = 'Opponent (X)';
+                        p2.querySelector('h3').textContent = 'You (O)';
+                    }
+                },
+
+                // ---- Handle Click ----
+                handleClick(row, col) {
+                    const game = this.game;
+                    if (!game || game.gameOver) return;
+                    if (game.currentPlayer !== this.mySide) return;
+
+                    if (game.selectedCell === null) {
+                        if (game.board[row][col] === this.mySide) {
+                            game.selectedCell = { row, col };
+                            game.validMoves = game.getValidMoves(row, col);
+                            this.renderBoard();
+                        }
+                        return;
+                    }
+
+                    const isValid = game.validMoves.some(m => m.row === row && m.col === col);
+                    if (isValid) {
+                        const from = game.selectedCell;
+                        const success = game.makeMove(from.row, from.col, row, col);
+                        if (success) {
+                            game.selectedCell = null;
+                            game.validMoves = [];
+                            game.saveToRegistry();
+                            this.renderBoard();
+
+                            if (game.gameOver) {
+                                this.handleGameEnd();
+                                return;
+                            }
+
+                            if (game.currentPlayer !== this.mySide) {
+                                setTimeout(() => this.simulateOpponentMove(), 600);
+                            }
+                        }
+                    } else {
+                        if (game.board[row][col] === this.mySide) {
+                            game.selectedCell = { row, col };
+                            game.validMoves = game.getValidMoves(row, col);
+                            this.renderBoard();
+                        } else {
+                            game.selectedCell = null;
+                            game.validMoves = [];
+                            this.renderBoard();
+                        }
+                    }
+                }
+            };
+
+            // ============================================================
+            // 2. VS AI - FULL SMART AI (UNCHANGED FROM ORIGINAL)
+            // ============================================================
+
+            const boardAI = document.getElementById('boardAI');
+            const statusAI = document.getElementById('statusAI');
+            const claimDrawAI = document.getElementById('claimDrawAI');
+            const choiceOverlay = document.getElementById('choiceOverlay');
+
+            let gameAI = {
+                board: [
+                    ['X', 'X', 'X'],
+                    ['', '', ''],
+                    ['O', 'O', 'O']
+                ],
+                hasMoved: [
+                    [false, false, false],
+                    [false, false, false],
+                    [false, false, false]
+                ],
+                currentPlayer: 'X',
+                selectedCell: null,
+                gameOver: false,
+                validMoves: [],
+                positionHistory: [],
+                positionCounts: {},
+                drawAvailable: false,
+                drawClaimed: false,
+                playerSide: 'X',
+                aiSide: 'O'
+            };
+
+            let aiGameStarted = false;
+
+            function getPositionKey2(board, hasMoved, currentPlayer) {
+                let key = '';
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        key += board[r][c] || '-';
+                        key += hasMoved[r][c] ? '1' : '0';
+                    }
+                }
+                return key + currentPlayer;
+            }
+
+            function evaluateLineAI(line, aiSide, playerSide) {
+                let ai = 0,
+                    player = 0,
+                    empty = 0;
+                for (const p of line) {
+                    if (p === aiSide) ai++;
+                    else if (p === playerSide) player++;
+                    else empty++;
+                }
+                if (ai === 3) return 100;
+                if (player === 3) return -100;
+                if (ai === 2 && empty === 1) return 10;
+                if (player === 2 && empty === 1) return -10;
+                if (ai === 1 && empty === 2) return 1;
+                if (player === 1 && empty === 2) return -1;
+                return 0;
+            }
+
+            function evaluateBoardAI(board, hasMoved, aiSide, playerSide) {
+                let score = 0;
+                if (board[1][1] === aiSide) score += 3;
+                else if (board[1][1] === playerSide) score -= 3;
+                for (let r = 0; r < 3; r++) score += evaluateLineAI([board[r][0], board[r][1], board[r][2]], aiSide,
+                    playerSide);
+                for (let c = 0; c < 3; c++) score += evaluateLineAI([board[0][c], board[1][c], board[2][c]], aiSide,
+                    playerSide);
+                score += evaluateLineAI([board[0][0], board[1][1], board[2][2]], aiSide, playerSide);
+                score += evaluateLineAI([board[0][2], board[1][1], board[2][0]], aiSide, playerSide);
+                let aiAct = 0,
+                    plAct = 0;
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        if (board[r][c] === aiSide && hasMoved[r][c]) aiAct++;
+                        if (board[r][c] === playerSide && hasMoved[r][c]) plAct++;
+                    }
+                }
+                score += (aiAct - plAct) * 2;
+                return score;
+            }
+
+            function minimaxAI(board, hasMoved, depth, alpha, beta, isMaximizing, pathLength, aiSide, playerSide) {
+                function checkWin2(b, m, p) {
+                    for (let r = 0; r < 3; r++) {
+                        if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2]) return true;
+                    }
+                    for (let c = 0; c < 3; c++) {
+                        if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c]) return true;
+                    }
+                    if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                    if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                    return false;
+                }
+
+                function isFull(b) {
+                    for (let r = 0; r < 3; r++)
+                        for (let c = 0; c < 3; c++)
+                            if (b[r][c] === '') return false;
+                    return true;
+                }
+
+                function getAllMoves(b, p) {
+                    const moves = [];
+                    for (let r = 0; r < 3; r++) {
+                        for (let c = 0; c < 3; c++) {
+                            if (b[r][c] === p) {
+                                for (let tr = 0; tr < 3; tr++) {
+                                    for (let tc = 0; tc < 3; tc++) {
+                                        if (b[tr][tc] === '') {
+                                            moves.push({ from: { row: r, col: c }, to: { row: tr, col: tc } });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return moves;
+                }
+
+                if (checkWin2(board, hasMoved, aiSide)) return 100 - pathLength;
+                if (checkWin2(board, hasMoved, playerSide)) return -100 + pathLength;
+                if (isFull(board) || depth === 0) return evaluateBoardAI(board, hasMoved, aiSide, playerSide);
+
+                if (isMaximizing) {
+                    let maxScore = -Infinity;
+                    const moves = getAllMoves(board, aiSide);
+                    for (const move of moves) {
+                        const { from, to } = move;
+                        const orig = board[to.row][to.col];
+                        const origMoved = hasMoved[to.row][to.col];
+                        board[to.row][to.col] = aiSide;
+                        board[from.row][from.col] = '';
+                        hasMoved[to.row][to.col] = true;
+                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, false, pathLength + 1, aiSide,
+                            playerSide);
+                        board[from.row][from.col] = aiSide;
+                        board[to.row][to.col] = orig;
+                        hasMoved[to.row][to.col] = origMoved;
+                        maxScore = Math.max(score, maxScore);
+                        alpha = Math.max(alpha, score);
+                        if (beta <= alpha) break;
+                    }
+                    return maxScore;
+                } else {
+                    let minScore = Infinity;
+                    const moves = getAllMoves(board, playerSide);
+                    for (const move of moves) {
+                        const { from, to } = move;
+                        const orig = board[to.row][to.col];
+                        const origMoved = hasMoved[to.row][to.col];
+                        board[to.row][to.col] = playerSide;
+                        board[from.row][from.col] = '';
+                        hasMoved[to.row][to.col] = true;
+                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, true, pathLength + 1, aiSide,
+                            playerSide);
+                        board[from.row][from.col] = playerSide;
+                        board[to.row][to.col] = orig;
+                        hasMoved[to.row][to.col] = origMoved;
+                        minScore = Math.min(score, minScore);
+                        beta = Math.min(beta, score);
+                        if (beta <= alpha) break;
+                    }
+                    return minScore;
+                }
+            }
+
+            function findBestMoveAI(board, hasMoved, aiSide, playerSide) {
+                let bestScore = -Infinity;
+                let bestMove = null;
+                const moves = [];
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        if (board[r][c] === aiSide) {
+                            for (let tr = 0; tr < 3; tr++) {
+                                for (let tc = 0; tc < 3; tc++) {
+                                    if (board[tr][tc] === '') {
+                                        moves.push({ from: { row: r, col: c }, to: { row: tr, col: tc } });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                for (const move of moves) {
+                    const { from, to } = move;
+                    const orig = board[to.row][to.col];
+                    const origMoved = hasMoved[to.row][to.col];
+                    board[to.row][to.col] = aiSide;
+                    board[from.row][from.col] = '';
+                    hasMoved[to.row][to.col] = true;
+
+                    function checkWinNow(b, m, p) {
+                        for (let r = 0; r < 3; r++) {
+                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
+                            return true;
+                        }
+                        for (let c = 0; c < 3; c++) {
+                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
+                            return true;
+                        }
+                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                        return false;
+                    }
+
+                    if (checkWinNow(board, hasMoved, aiSide)) {
+                        board[from.row][from.col] = aiSide;
+                        board[to.row][to.col] = orig;
+                        hasMoved[to.row][to.col] = origMoved;
+                        return move;
+                    }
+                    const score = minimaxAI(board, hasMoved, 6, -Infinity, Infinity, false, 1, aiSide, playerSide);
+                    board[from.row][from.col] = aiSide;
+                    board[to.row][to.col] = orig;
+                    hasMoved[to.row][to.col] = origMoved;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
+                }
+                return bestMove;
+            }
+
+            function renderAIBoard() {
+                const g = gameAI;
+                boardAI.innerHTML = '';
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+                        const val = g.board[r][c];
+                        if (val) {
+                            cell.textContent = val;
+                            cell.classList.add(val);
+                            if (!g.hasMoved[r][c]) cell.classList.add('inactive');
+                        }
+                        if (g.selectedCell && g.selectedCell.row === r && g.selectedCell.col === c) {
+                            cell.classList.add('selected');
+                        }
+                        if (g.validMoves && g.validMoves.some(m => m.row === r && m.col === c)) {
+                            cell.classList.add('valid-move');
+                        }
+                        cell.addEventListener('click', () => handleAIClick(r, c));
+                        boardAI.appendChild(cell);
+                    }
+                }
+                if (g.gameOver) {
+                    statusAI.textContent = 'Game Over';
+                } else if (g.currentPlayer === g.playerSide) {
+                    statusAI.textContent = `Your turn (${g.playerSide})`;
+                } else {
+                    statusAI.textContent = `AI is thinking...`;
+                }
+                if (g.drawAvailable && !g.drawClaimed && !g.gameOver) {
+                    claimDrawAI.classList.add('visible');
+                } else {
+                    claimDrawAI.classList.remove('visible');
+                }
+            }
+
+            function handleAIClick(row, col) {
+                const g = gameAI;
+                if (g.gameOver || g.currentPlayer !== g.playerSide) return;
+                if (g.selectedCell === null) {
+                    if (g.board[row][col] === g.playerSide) {
+                        g.selectedCell = { row, col };
+                        g.validMoves = [];
+                        for (let r = 0; r < 3; r++)
+                            for (let c = 0; c < 3; c++)
+                                if (g.board[r][c] === '') g.validMoves.push({ row: r, col: c });
+                        renderAIBoard();
+                    }
+                    return;
+                }
+                const isValid = g.validMoves.some(m => m.row === row && m.col === col);
+                if (isValid) {
+                    const from = g.selectedCell;
+                    g.board[row][col] = g.playerSide;
+                    g.board[from.row][from.col] = '';
+                    g.hasMoved[row][col] = true;
+                    g.selectedCell = null;
+                    g.validMoves = [];
+                    const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
+                    g.positionHistory.push(key);
+                    g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
+                    if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
+
+                    function checkWinNow(b, m, p) {
+                        for (let r = 0; r < 3; r++) {
+                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
+                            return true;
+                        }
+                        for (let c = 0; c < 3; c++) {
+                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
+                            return true;
+                        }
+                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                        return false;
+                    }
+
+                    if (checkWinNow(g.board, g.hasMoved, g.playerSide)) {
+                        g.gameOver = true;
+                        showResult('You Win! 🎉', 'You defeated the AI!', '⭐ 1500', '');
+                        renderAIBoard();
+                        return;
+                    }
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
+                            '') return false; return true; }(g.board)) {
+                        g.gameOver = true;
+                        showResult('Draw!', 'Board is full.', '⭐ 1500', '');
+                        renderAIBoard();
+                        return;
+                    }
+
+                    g.currentPlayer = g.aiSide;
+                    renderAIBoard();
+                    setTimeout(() => makeAIMove2(), 500);
+                } else {
+                    if (g.board[row][col] === g.playerSide) {
+                        g.selectedCell = { row, col };
+                        g.validMoves = [];
+                        for (let r = 0; r < 3; r++)
+                            for (let c = 0; c < 3; c++)
+                                if (g.board[r][c] === '') g.validMoves.push({ row: r, col: c });
+                        renderAIBoard();
+                    } else {
+                        g.selectedCell = null;
+                        g.validMoves = [];
+                        renderAIBoard();
+                    }
+                }
+            }
+
+            function makeAIMove2() {
+                const g = gameAI;
+                if (g.gameOver || g.currentPlayer !== g.aiSide) return;
+                const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide);
+                if (move) {
+                    const { from, to } = move;
+                    g.board[to.row][to.col] = g.aiSide;
+                    g.board[from.row][from.col] = '';
+                    g.hasMoved[to.row][to.col] = true;
+                    const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
+                    g.positionHistory.push(key);
+                    g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
+                    if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
+
+                    function checkWinNow(b, m, p) {
+                        for (let r = 0; r < 3; r++) {
+                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
+                            return true;
+                        }
+                        for (let c = 0; c < 3; c++) {
+                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
+                            return true;
+                        }
+                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                        return false;
+                    }
+
+                    if (checkWinNow(g.board, g.hasMoved, g.aiSide)) {
+                        g.gameOver = true;
+                        showResult('AI Wins! 😢', 'The AI defeated you.', '⭐ 1500', '');
+                        renderAIBoard();
+                        return;
+                    }
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
+                            '') return false; return true; }(g.board)) {
+                        g.gameOver = true;
+                        showResult('Draw!', 'Board is full.', '⭐ 1500', '');
+                        renderAIBoard();
+                        return;
+                    }
+                    g.currentPlayer = g.playerSide;
+                    renderAIBoard();
+                }
+            }
+
+            function resetAI() {
+                gameAI = {
+                    board: [
+                        ['X', 'X', 'X'],
+                        ['', '', ''],
+                        ['O', 'O', 'O']
+                    ],
+                    hasMoved: [
+                        [false, false, false],
+                        [false, false, false],
+                        [false, false, false]
+                    ],
+                    currentPlayer: 'X',
+                    selectedCell: null,
+                    gameOver: false,
+                    validMoves: [],
+                    positionHistory: [],
+                    positionCounts: {},
+                    drawAvailable: false,
+                    drawClaimed: false,
+                    playerSide: 'X',
+                    aiSide: 'O'
+                };
+                aiGameStarted = false;
+                gameOverlay.classList.remove('active');
+                choiceOverlay.classList.remove('hidden');
+                renderAIBoard();
+            }
+
+            function setPlayerSide(side) {
+                gameAI.playerSide = side;
+                gameAI.aiSide = (side === 'X' ? 'O' : 'X');
+                document.getElementById('playerXAI').querySelector('h3').textContent = side === 'X' ? 'Player (X)' :
+                    'AI (X)';
+                document.getElementById('playerOAI').querySelector('h3').textContent = side === 'O' ? 'Player (O)' :
+                    'AI (O)';
+                gameAI.board = [
+                    ['X', 'X', 'X'],
+                    ['', '', ''],
+                    ['O', 'O', 'O']
+                ];
+                gameAI.hasMoved = [
+                    [false, false, false],
+                    [false, false, false],
+                    [false, false, false]
+                ];
+                gameAI.currentPlayer = 'X';
+                gameAI.selectedCell = null;
+                gameAI.gameOver = false;
+                gameAI.validMoves = [];
+                gameAI.positionHistory = [];
+                gameAI.positionCounts = {};
+                gameAI.drawAvailable = false;
+                gameAI.drawClaimed = false;
+                gameOverlay.classList.remove('active');
+                choiceOverlay.classList.add('hidden');
+                aiGameStarted = true;
+                renderAIBoard();
+
+                if (gameAI.playerSide === 'O') {
+                    gameAI.currentPlayer = 'X';
+                    renderAIBoard();
+                    setTimeout(makeAIMove2, 500);
+                }
+            }
+
+            // ============================================================
+            // 3. VS FRIEND (UNCHANGED)
+            // ============================================================
+
+            const boardFriend = document.getElementById('boardFriend');
+            const statusFriend = document.getElementById('statusFriend');
+            const claimDrawFriend = document.getElementById('claimDrawFriend');
+
+            let gameFriend = {
+                board: [
+                    ['X', 'X', 'X'],
+                    ['', '', ''],
+                    ['O', 'O', 'O']
+                ],
+                hasMoved: [
+                    [false, false, false],
+                    [false, false, false],
+                    [false, false, false]
+                ],
+                currentPlayer: 'X',
+                selectedCell: null,
+                gameOver: false,
+                validMoves: [],
+                positionHistory: [],
+                positionCounts: {},
+                drawAvailable: false,
+                drawClaimed: false
+            };
+
+            function renderFriendBoard() {
+                const g = gameFriend;
+                boardFriend.innerHTML = '';
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+                        const val = g.board[r][c];
+                        if (val) {
+                            cell.textContent = val;
+                            cell.classList.add(val);
+                            if (!g.hasMoved[r][c]) cell.classList.add('inactive');
+                        }
+                        if (g.selectedCell && g.selectedCell.row === r && g.selectedCell.col === c) {
+                            cell.classList.add('selected');
+                        }
+                        if (g.validMoves && g.validMoves.some(m => m.row === r && m.col === c)) {
+                            cell.classList.add('valid-move');
+                        }
+                        cell.addEventListener('click', () => handleFriendClick(r, c));
+                        boardFriend.appendChild(cell);
+                    }
+                }
+                if (g.gameOver) {
+                    statusFriend.textContent = 'Game Over';
+                } else {
+                    statusFriend.textContent = `Player ${g.currentPlayer}'s turn`;
+                }
+                if (g.drawAvailable && !g.drawClaimed && !g.gameOver) {
+                    claimDrawFriend.classList.add('visible');
+                } else {
+                    claimDrawFriend.classList.remove('visible');
+                }
+            }
+
+            function handleFriendClick(row, col) {
+                const g = gameFriend;
+                if (g.gameOver) return;
+                if (g.selectedCell === null) {
+                    if (g.board[row][col] === g.currentPlayer) {
+                        g.selectedCell = { row, col };
+                        g.validMoves = [];
+                        for (let r = 0; r < 3; r++)
+                            for (let c = 0; c < 3; c++)
+                                if (g.board[r][c] === '') g.validMoves.push({ row: r, col: c });
+                        renderFriendBoard();
+                    }
+                    return;
+                }
+                const isValid = g.validMoves.some(m => m.row === row && m.col === col);
+                if (isValid) {
+                    const from = g.selectedCell;
+                    const player = g.board[from.row][from.col];
+                    g.board[row][col] = player;
+                    g.board[from.row][from.col] = '';
+                    g.hasMoved[row][col] = true;
+                    g.selectedCell = null;
+                    g.validMoves = [];
+                    const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
+                    g.positionHistory.push(key);
+                    g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
+                    if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
+
+                    function checkWinNow(b, m, p) {
+                        for (let r = 0; r < 3; r++) {
+                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
+                            return true;
+                        }
+                        for (let c = 0; c < 3; c++) {
+                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
+                            return true;
+                        }
+                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                        return false;
+                    }
+
+                    if (checkWinNow(g.board, g.hasMoved, player)) {
+                        g.gameOver = true;
+                        showResult(`${player} Wins! 🎉`, `Player ${player} wins!`, '', '');
+                        renderFriendBoard();
+                        return;
+                    }
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
+                            '') return false; return true; }(g.board)) {
+                        g.gameOver = true;
+                        showResult('Draw!', 'Board is full.', '', '');
+                        renderFriendBoard();
+                        return;
+                    }
+                    g.currentPlayer = (g.currentPlayer === 'X' ? 'O' : 'X');
+                    renderFriendBoard();
+                } else {
+                    if (g.board[row][col] === g.currentPlayer) {
+                        g.selectedCell = { row, col };
+                        g.validMoves = [];
+                        for (let r = 0; r < 3; r++)
+                            for (let c = 0; c < 3; c++)
+                                if (g.board[r][c] === '') g.validMoves.push({ row: r, col: c });
+                        renderFriendBoard();
+                    } else {
+                        g.selectedCell = null;
+                        g.validMoves = [];
+                        renderFriendBoard();
+                    }
+                }
+            }
+
+            function resetFriend() {
+                gameFriend = {
+                    board: [
+                        ['X', 'X', 'X'],
+                        ['', '', ''],
+                        ['O', 'O', 'O']
+                    ],
+                    hasMoved: [
+                        [false, false, false],
+                        [false, false, false],
+                        [false, false, false]
+                    ],
+                    currentPlayer: 'X',
+                    selectedCell: null,
+                    gameOver: false,
+                    validMoves: [],
+                    positionHistory: [],
+                    positionCounts: {},
+                    drawAvailable: false,
+                    drawClaimed: false
+                };
+                gameOverlay.classList.remove('active');
+                renderFriendBoard();
+            }
+
+            // ============================================================
+            // 4. SHARED UI
+            // ============================================================
+
+            function showResult(title, message, eloMsg, detail) {
+                resultTitle.textContent = title;
+                resultMessage.textContent = message;
+                const eloP = document.getElementById('resultElo');
+                if (eloMsg) {
+                    eloP.textContent = eloMsg;
+                } else {
+                    eloP.textContent = '';
+                }
+                gameOverlay.classList.add('active');
+            }
+
+            // ============================================================
+            // 5. EVENT LISTENERS
+            // ============================================================
+
+            // Tabs - vs AI is default
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+                    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+
+                    if (btn.dataset.tab === 'online') {
+                        onlineManager.renderBoard();
+                        onlineManager.updateUI();
+                        // HIDE the choice overlay when on Online tab
+                        document.getElementById('choiceOverlay').classList.add('hidden');
+                    }
+                    if (btn.dataset.tab === 'vsAI') {
+                        if (!aiGameStarted) {
+                            choiceOverlay.classList.remove('hidden');
+                        }
+                        renderAIBoard();
+                    }
+                    if (btn.dataset.tab === 'vsFriend') {
+                        // HIDE the choice overlay when on Friend tab
+                        document.getElementById('choiceOverlay').classList.add('hidden');
+                        renderFriendBoard();
+                    }
+                });
+            });
+
+            // Online
+            document.getElementById('findOpponentBtn').addEventListener('click', () => {
+                onlineManager.findOpponent();
+            });
+
+            document.getElementById('joinOpponentBtn').addEventListener('click', () => {
+                const id = document.getElementById('opponentIdInput').value.trim();
+                onlineManager.joinOpponent(id);
+            });
+
+            document.getElementById('resetOnlineBtn').addEventListener('click', () => {
+                if (onlineManager.game && !onlineManager.game.gameOver) {
+                    if (confirm('Are you sure you want to leave the game? This will count as a loss.')) {
+                        onlineManager.leaveGame();
+                    }
+                } else {
+                    onlineManager.leaveGame();
+                }
+            });
+
+            claimDrawOnline.addEventListener('click', () => {
+                if (onlineManager.game && onlineManager.game.claimDraw()) {
+                    onlineManager.game.saveToRegistry();
+                    onlineManager.renderBoard();
+                    onlineManager.handleGameEnd();
+                }
+            });
+
+            // AI side choice
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const side = e.currentTarget.dataset.side;
+                    setPlayerSide(side);
+                });
+            });
+
+            document.getElementById('resetAI').addEventListener('click', resetAI);
+
+            claimDrawAI.addEventListener('click', () => {
+                if (gameAI.drawAvailable && !gameAI.drawClaimed && !gameAI.gameOver) {
+                    gameAI.drawClaimed = true;
+                    gameAI.gameOver = true;
+                    claimDrawAI.classList.remove('visible');
+                    showResult('Draw!', 'You claimed a draw by repetition.', '⭐ 1500', '');
+                    renderAIBoard();
+                }
+            });
+
+            // Friend
+            document.getElementById('resetFriend').addEventListener('click', resetFriend);
+            claimDrawFriend.addEventListener('click', () => {
+                if (gameFriend.drawAvailable && !gameFriend.drawClaimed && !gameFriend.gameOver) {
+                    gameFriend.drawClaimed = true;
+                    gameFriend.gameOver = true;
+                    claimDrawFriend.classList.remove('visible');
+                    showResult('Draw!', 'Draw claimed by repetition.', '', '');
+                    renderFriendBoard();
+                }
+            });
+
+            // Help
+            document.getElementById('helpOnline').addEventListener('click', () => {
+                alert(
+                    'Online Play:\n\n- Your 5-digit ID is saved to your browser\n- Click "Find Opponent" to join the matchmaking queue\n- Or enter an opponent\'s ID and click "Join"\n- X starts, O goes second\n- Win = +10 Elo, Lose = -10 Elo\n- Draw claim after 5 repetitions');
+            });
+
+            // Play again
+            document.getElementById('playAgainBtn').addEventListener('click', () => {
+                gameOverlay.classList.remove('active');
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (activeTab.dataset.tab === 'online') {
+                    onlineManager.leaveGame();
+                } else if (activeTab.dataset.tab === 'vsAI') {
+                    resetAI();
+                    choiceOverlay.classList.remove('hidden');
+                } else {
+                    resetFriend();
+                }
+            });
+
+            // ============================================================
+            // 6. INIT
+            // ============================================================
+
+            onlineManager.init();
+            renderAIBoard();
+            renderFriendBoard();
+
+            // Show choice overlay for AI initially
+            choiceOverlay.classList.remove('hidden');
+
+            console.log('Sega 2 Online initialized!');
+            console.log('Your ID:', onlineManager.currentPlayer.id);
+            console.log('Players registered:', Object.keys(getPlayerRegistry()).length);
+
+            // Periodic queue sync
+            setInterval(() => {
+                getQueue().then(queue => {
+                    getPlayerRegistry().then(registry => {
+                        document.getElementById('debugInfo').textContent =
+                            `Queue: ${queue.length} | Players: ${Object.keys(registry).length}`;
+                    });
+                });
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
+        header {
+            background: linear-gradient(90deg, #1a2a6c, #2a4ba0);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .tab-bar {
+            display: flex;
+            background: #eaeef3;
+            border-bottom: 2px solid #ccc;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 14px 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+            color: #1a2a6c;
+            border-bottom: 4px solid transparent;
+            min-width: 120px;
+        }
+
+        .tab-btn:hover {
+            background: #d0d8e0;
+        }
+
+        .tab-btn.active {
+            background: white;
+            border-bottom: 4px solid #b21f1f;
+            color: #b21f1f;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 10px 0 0 0;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .game-info {
+            padding: 15px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+            gap: 10px;
+        }
+
+        .status {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #2a4ba0;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background-color: #1a2a6c;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .game-area {
+            display: flex;
+            padding: 20px;
+            flex-wrap: wrap;
+        }
+
+        .board-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 280px;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 4px;
+            width: 320px;
+            height: 320px;
+            background-color: #1a2a6c;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .cell {
+            background-color: white;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .cell:hover {
+            background-color: #f0f0f0;
+        }
+
+        .cell.X {
+            color: #b21f1f;
+        }
+        .cell.O {
+            color: #2a4ba0;
+        }
+
+        .cell.inactive::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 240, 0, 0.3);
+            pointer-events: none;
+            border-radius: 5px;
+        }
+
+        .cell.selected {
+            background-color: #ffeb3b;
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(255, 235, 59, 0.7);
+        }
+
+        .cell.valid-move {
+            background-color: rgba(76, 175, 80, 0.2);
+            cursor: pointer;
+        }
+
+        .cell.valid-move:hover {
+            background-color: rgba(76, 175, 80, 0.4);
+        }
+
+        .winning-cell {
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .instructions {
+            flex: 1;
+            padding: 0 20px;
+            min-width: 200px;
+            margin-top: 10px;
+        }
+
+        .instructions h2 {
+            color: #1a2a6c;
+            margin-bottom: 15px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #1a2a6c;
+        }
+
+        .instructions ul {
+            list-style-type: none;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #b21f1f;
+        }
+
+        .player-info {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .player {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            width: 45%;
+            min-width: 120px;
+            margin: 5px 0;
+        }
+
+        .player-x {
+            background-color: rgba(178, 31, 31, 0.1);
+            border: 2px solid #b21f1f;
+        }
+
+        .player-o {
+            background-color: rgba(42, 75, 160, 0.1);
+            border: 2px solid #2a4ba0;
+        }
+
+        .game-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+
+        .game-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .result-modal {
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            transform: translateY(-50px);
+            transition: transform 0.5s;
+            max-width: 90%;
+        }
+
+        .game-overlay.active .result-modal {
+            transform: translateY(0);
+        }
+
+        .result-modal h2 {
+            color: #1a2a6c;
+            margin-bottom: 20px;
+            font-size: 2rem;
+        }
+
+        .result-modal p {
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
+        .lobby-area {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .player-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .player-id-box {
+            background: #1a2a6c;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+        }
+
+        .player-elo {
+            background: #b21f1f;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .lobby-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .lobby-controls input {
+            padding: 8px 12px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+            width: 130px;
+        }
+
+        .lobby-controls input:focus {
+            outline: none;
+            border-color: #2a4ba0;
+        }
+
+        .btn-join {
+            background-color: #28a745;
+        }
+
+        .btn-join:hover {
+            background-color: #1e7e34;
+        }
+
+        .btn-find {
+            background-color: #fd7e14;
+        }
+
+        .btn-find:hover {
+            background-color: #e06b0a;
+        }
+
+        .btn-find.cancel {
+            background-color: #dc3545;
+        }
+
+        .btn-find.cancel:hover {
+            background-color: #b02a37;
+        }
+
+        .online-status {
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .online-status.waiting {
+            color: #fd7e14;
+        }
+
+        .online-status.ingame {
+            color: #2a4ba0;
+        }
+
+        .draw-claim-area {
+            width: 100%;
+            margin-top: 16px;
+            display: flex;
+            justify-content: center;
+            min-height: 52px;
+        }
+
+        .btn-claim-draw {
+            background-color: #b21f1f;
+            padding: 10px 28px;
+            font-size: 1.1rem;
+            border-radius: 30px;
+            box-shadow: 0 4px 10px rgba(178, 31, 31, 0.3);
+            display: none;
+            transition: all 0.2s;
+        }
+
+        .btn-claim-draw.visible {
+            display: inline-block;
+        }
+
+        .btn-claim-draw:hover {
+            background-color: #8a1818;
+            transform: scale(1.02);
+        }
+
+        .queue-status {
+            font-size: 0.9rem;
+            color: #666;
+            padding: 4px 12px;
+            background: #e9ecef;
+            border-radius: 12px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-top: 1px solid #ddd;
+            color: #666;
+        }
+
+        .choice-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .choice-overlay.hidden {
+            display: none;
+        }
+
+        .choice-box {
+            background: white;
+            padding: 40px 30px;
+            border-radius: 30px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .choice-box h2 {
+            color: #1a2a6c;
+            margin-bottom: 20px;
+        }
+
+        .choice-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .choice-btn {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            font-size: 3rem;
+            font-weight: bold;
+            border: 4px solid #1a2a6c;
+            background: white;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .choice-btn:hover {
+            transform: scale(1.08);
+            background: #f0f4ff;
+        }
+
+        .choice-btn.x-btn {
+            color: #b21f1f;
+            border-color: #b21f1f;
+        }
+        .choice-btn.o-btn {
+            color: #2a4ba0;
+            border-color: #2a4ba0;
+        }
+
+        .debug-info {
+            font-size: 0.75rem;
+            color: #888;
+            padding: 2px 10px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-weight: bold;
+            z-index: 3000;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .game-area {
+                flex-direction: column;
+            }
+            .instructions {
+                margin-top: 20px;
+                padding: 0;
+            }
+            .player-info {
+                flex-direction: column;
+                align-items: center;
+            }
+            .player {
+                width: 90%;
+                margin-bottom: 10px;
+            }
+            .board {
+                width: 280px;
+                height: 280px;
+            }
+            .lobby-area {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .lobby-controls {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOAST NOTIFICATION -->
+    <div class="toast" id="toast"></div>
+
+    <!-- SIDE CHOICE OVERLAY (for vs AI) -->
+    <div class="choice-overlay" id="choiceOverlay">
+        <div class="choice-box">
+            <h2>⚔️ Choose Your Side</h2>
+            <p style="margin-bottom: 10px; color: #444;">You play as <strong>X</strong> (top row) or <strong>O</strong> (bottom row).<br>X always starts.</p>
+            <div class="choice-buttons">
+                <button class="choice-btn x-btn" data-side="X">X</button>
+                <button class="choice-btn o-btn" data-side="O">O</button>
+            </div>
+            <p style="margin-top: 20px; font-size: 0.9rem; color: #777;">AI will play the opposite side.</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Sega 2 Online</h1>
+            <p>Multiplayer with Elo Rating</p>
+        </header>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="vsAI">🤖 vs AI</button>
+            <button class="tab-btn" data-tab="online">🌐 Online</button>
+            <button class="tab-btn" data-tab="vsFriend">👥 vs Friend</button>
+        </div>
+
+        <!-- VS AI TAB (DEFAULT) -->
+        <div class="tab-content active" id="tab-vsAI">
+            <div class="game-info">
+                <div class="status" id="statusAI">Your turn (X)</div>
+                <div class="controls">
+                    <button id="resetAI">Reset Game</button>
+                </div>
+            </div>
+            <div class="game-area">
+                <div class="board-container">
+                    <div class="board" id="boardAI"></div>
+                    <div class="draw-claim-area">
+                        <button class="btn-claim-draw" id="claimDrawAI">🔄 Claim Draw</button>
+                    </div>
+                    <div class="player-info">
+                        <div class="player player-x" id="playerXAI">
+                            <h3>Player (X)</h3>
+                            <p>Top Row</p>
+                        </div>
+                        <div class="player player-o" id="playerOAI">
+                            <h3>AI (O)</h3>
+                            <p>Bottom Row</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="instructions">
+                    <h2>Vs AI</h2>
+                    <ul>
+                        <li>Play against the computer</li>
+                        <li>Click on your piece, then destination</li>
+                        <li>Win by forming a line (all pieces moved)</li>
+                        <li><span class="highlight">No piece capturing</span></li>
+                        <li>Draw claim after 5 repetitions</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ONLINE TAB -->
+        <div class="tab-content" id="tab-online">
+            <div class="lobby-area">
+                <div class="player-profile">
+                    <span class="player-id-box" id="myIdDisplay">ID: -----</span>
+                    <span class="player-elo" id="myEloDisplay">⭐ 1500</span>
+                    <span class="online-status" id="onlineStatus">● Online</span>
+                    <span class="queue-status" id="queueStatus"></span>
+                    <span class="debug-info" id="debugInfo"></span>
+                </div>
+                <div class="lobby-controls">
+                    <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
+                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
+                    <button class="btn-join" id="joinOpponentBtn">Join</button>
+                    <button id="resetOnlineBtn">Leave Game</button>
+                </div>
+            </div>
+
+            <div class="game-info">
+                <div class="status" id="statusOnline">Waiting for opponent...</div>
+                <div class="controls">
+                    <button id="helpOnline">How to Play</button>
+                </div>
+            </div>
+
+            <div class="game-area">
+                <div class="board-container">
+                    <div class="board" id="boardOnline"></div>
+                    <div class="draw-claim-area">
+                        <button class="btn-claim-draw" id="claimDrawOnline">🔄 Claim Draw</button>
+                    </div>
+                    <div class="player-info">
+                        <div class="player player-x" id="playerXOnline">
+                            <h3>You (X)</h3>
+                            <p>Top Row</p>
+                        </div>
+                        <div class="player player-o" id="playerOOnline">
+                            <h3>Opponent (O)</h3>
+                            <p>Bottom Row</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="instructions">
+                    <h2>Online Play</h2>
+                    <ul>
+                        <li>Your unique <span class="highlight">5-digit ID</span> is saved to your browser</li>
+                        <li>Click <span class="highlight">"Find Opponent"</span> to join the matchmaking queue</li>
+                        <li>Or enter an opponent's ID and click <span class="highlight">"Join"</span></li>
+                        <li>X always starts (top row)</li>
+                        <li>Win = +10 Elo, Lose = -10 Elo, Draw = no change</li>
+                        <li>All pieces in winning line must have moved</li>
+                        <li><span class="highlight">No piece capturing</span></li>
+                        <li>Draw claim: if same position repeats 5 times</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- VS FRIEND TAB -->
+        <div class="tab-content" id="tab-vsFriend">
+            <div class="game-info">
+                <div class="status" id="statusFriend">Player X's turn</div>
+                <div class="controls">
+                    <button id="resetFriend">Reset Game</button>
+                </div>
+            </div>
+            <div class="game-area">
+                <div class="board-container">
+                    <div class="board" id="boardFriend"></div>
+                    <div class="draw-claim-area">
+                        <button class="btn-claim-draw" id="claimDrawFriend">🔄 Claim Draw</button>
+                    </div>
+                    <div class="player-info">
+                        <div class="player player-x" id="playerXFriend">
+                            <h3>Player X</h3>
+                            <p>Top Row</p>
+                        </div>
+                        <div class="player player-o" id="playerOFriend">
+                            <h3>Player O</h3>
+                            <p>Bottom Row</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="instructions">
+                    <h2>Vs Friend</h2>
+                    <ul>
+                        <li>Two players on the same device</li>
+                        <li>X starts, then O</li>
+                        <li><span class="highlight">No piece capturing</span></li>
+                        <li>Draw claim after 5 repetitions</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243"</p>
+        </footer>
+    </div>
+
+    <!-- RESULT OVERLAY -->
+    <div class="game-overlay" id="gameOverlay">
+        <div class="result-modal">
+            <h2 id="resultTitle">Game Over</h2>
+            <p id="resultMessage">You win!</p>
+            <p id="resultElo" style="font-size:1rem; color:#555;"></p>
+            <button id="playAgainBtn">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
         // FIREBASE CONFIG
         // ============================================================
         const firebaseConfig = {
