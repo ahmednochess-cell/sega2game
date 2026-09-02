@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sega 2 – Online Multiplayer</title>
     
     <!-- 🔥 FIREBASE SDK -->
@@ -97,7 +98,7 @@
     <div class="toast" id="toast"></div>
 
     <!-- SIDE CHOICE OVERLAY (for vs AI) -->
-    <div class="choice-overlay hidden" id="choiceOverlay">
+    <div class="choice-overlay" id="choiceOverlay">
         <div class="choice-box">
             <h2>⚔️ Choose Your Side</h2>
             <p style="margin-bottom: 10px; color: #444;">You play as <strong>X</strong> (top row) or <strong>O</strong> (bottom row).<br>X always starts.</p>
@@ -124,24 +125,24 @@
         <!-- VS AI TAB (DEFAULT) -->
         <div class="tab-content active" id="tab-vsAI">
             <div class="game-info">
-                <div class="status" id="statusAI">Your turn (O)</div>
+                <div class="status" id="statusAI">Your turn (X)</div>
                 <div class="controls">
                     <button id="resetAI">Reset Game</button>
                 </div>
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardAI"><div class="cell" data-row="0" data-col="0"></div><div class="cell X inactive" data-row="0" data-col="1">X</div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell X" data-row="1" data-col="1">X</div><div class="cell" data-row="1" data-col="2"></div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
+                    <div class="board" id="boardAI"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawAI">🔄 Claim Draw</button>
                     </div>
                     <div class="player-info">
                         <div class="player player-x" id="playerXAI">
-                            <h3>AI (X)</h3>
+                            <h3>Player (X)</h3>
                             <p>Top Row</p>
                         </div>
                         <div class="player player-o" id="playerOAI">
-                            <h3>Player (O)</h3>
+                            <h3>AI (O)</h3>
                             <p>Bottom Row</p>
                         </div>
                     </div>
@@ -154,6 +155,8 @@
                         <li>Win by forming a line (all pieces moved)</li>
                         <li><span class="highlight">No piece capturing</span></li>
                         <li>Draw claim after 5 repetitions</li>
+                        <li>AI randomly chooses non-losing opening move</li>
+                        <li>AI chooses highest win percentage in draw positions</li>
                     </ul>
                 </div>
             </div>
@@ -163,15 +166,15 @@
         <div class="tab-content" id="tab-online">
             <div class="lobby-area">
                 <div class="player-profile">
-                    <span class="player-id-box" id="myIdDisplay">ID: 12405</span>
-                    <span class="player-elo" id="myEloDisplay">⭐ 1516</span>
+                    <span class="player-id-box" id="myIdDisplay">ID: -----</span>
+                    <span class="player-elo" id="myEloDisplay">⭐ 1500</span>
                     <span class="online-status" id="onlineStatus">● Online</span>
                     <span class="queue-status" id="queueStatus"></span>
-                    <span class="debug-info" id="debugInfo">Queue: 0 | Players: 2</span>
+                    <span class="debug-info" id="debugInfo"></span>
                 </div>
                 <div class="lobby-controls">
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
-                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5">
+                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
                     <button class="btn-join" id="joinOpponentBtn">Join</button>
                     <button id="resetOnlineBtn">Leave Game</button>
                 </div>
@@ -186,7 +189,7 @@
 
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardOnline"><div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Waiting for opponent...</div></div>
+                    <div class="board" id="boardOnline"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawOnline">🔄 Claim Draw</button>
                     </div>
@@ -227,7 +230,7 @@
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardFriend"><div class="cell X inactive" data-row="0" data-col="0">X</div><div class="cell X inactive" data-row="0" data-col="1">X</div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell" data-row="1" data-col="1"></div><div class="cell" data-row="1" data-col="2"></div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
+                    <div class="board" id="boardFriend"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawFriend">🔄 Claim Draw</button>
                     </div>
@@ -255,16 +258,16 @@
         </div>
 
         <footer>
-            <p>cr7 3mmak – contact ahmed sherief "+966 54 30 94871"</p>
+            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243"</p>
         </footer>
     </div>
 
     <!-- RESULT OVERLAY -->
     <div class="game-overlay" id="gameOverlay">
         <div class="result-modal">
-            <h2 id="resultTitle">Draw!</h2>
-            <p id="resultMessage">You claimed a draw by repetition.</p>
-            <p id="resultElo" style="font-size:1rem; color:#555;">⭐ 1500</p>
+            <h2 id="resultTitle">Game Over</h2>
+            <p id="resultMessage">You win!</p>
+            <p id="resultElo" style="font-size:1rem; color:#555;"></p>
             <button id="playAgainBtn">Play Again</button>
         </div>
     </div>
@@ -1282,174 +1285,13 @@
             };
 
             // ============================================================
-            // 2. VS AI - WITH ADAPTIVE OPENING STRATEGY
+            // 2. VS AI - SMART STRATEGY SELECTION
             // ============================================================
 
             const boardAI = document.getElementById('boardAI');
             const statusAI = document.getElementById('statusAI');
             const claimDrawAI = document.getElementById('claimDrawAI');
             const choiceOverlay = document.getElementById('choiceOverlay');
-
-            // 🔥 Track draw history for the AI
-            const drawHistory = {
-                draws: 0,
-                lastOpenings: [],
-                maxOpenings: 6
-            };
-
-            // 🔥 Different opening strategies for the AI
-            const openingStrategies = {
-                // Strategy 1: Standard - move leftmost piece first
-                standard: {
-                    name: 'Standard',
-                    getFirstMove: (board, aiSide) => {
-                        for (let r = 0; r < 3; r++) {
-                            for (let c = 0; c < 3; c++) {
-                                if (board[r][c] === aiSide) {
-                                    // Move to center if possible
-                                    if (board[1][1] === '') {
-                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
-                                    }
-                                    // Move to first available empty
-                                    for (let tr = 0; tr < 3; tr++) {
-                                        for (let tc = 0; tc < 3; tc++) {
-                                            if (board[tr][tc] === '') {
-                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        return null;
-                    }
-                },
-                // Strategy 2: Aggressive - move rightmost piece first
-                aggressive: {
-                    name: 'Aggressive',
-                    getFirstMove: (board, aiSide) => {
-                        for (let r = 2; r >= 0; r--) {
-                            for (let c = 2; c >= 0; c--) {
-                                if (board[r][c] === aiSide) {
-                                    // Move to center if possible
-                                    if (board[1][1] === '') {
-                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
-                                    }
-                                    // Move to first available empty
-                                    for (let tr = 0; tr < 3; tr++) {
-                                        for (let tc = 0; tc < 3; tc++) {
-                                            if (board[tr][tc] === '') {
-                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        return null;
-                    }
-                },
-                // Strategy 3: Center-focused - prioritize center piece first
-                centerFocused: {
-                    name: 'Center-Focused',
-                    getFirstMove: (board, aiSide) => {
-                        // First try to move the center piece
-                        if (board[1][1] === aiSide) {
-                            for (let tr = 0; tr < 3; tr++) {
-                                for (let tc = 0; tc < 3; tc++) {
-                                    if (board[tr][tc] === '') {
-                                        return { from: { row: 1, col: 1 }, to: { row: tr, col: tc } };
-                                    }
-                                }
-                            }
-                        }
-                        // Otherwise use standard
-                        for (let r = 0; r < 3; r++) {
-                            for (let c = 0; c < 3; c++) {
-                                if (board[r][c] === aiSide) {
-                                    if (board[1][1] === '') {
-                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
-                                    }
-                                    for (let tr = 0; tr < 3; tr++) {
-                                        for (let tc = 0; tc < 3; tc++) {
-                                            if (board[tr][tc] === '') {
-                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        return null;
-                    }
-                },
-                // Strategy 4: Corners - move to corners first
-                corners: {
-                    name: 'Corners',
-                    getFirstMove: (board, aiSide) => {
-                        const corners = [[0,0], [0,2], [2,0], [2,2]];
-                        for (let r = 0; r < 3; r++) {
-                            for (let c = 0; c < 3; c++) {
-                                if (board[r][c] === aiSide) {
-                                    // Try to move to a corner
-                                    for (const [cr, cc] of corners) {
-                                        if (board[cr][cc] === '') {
-                                            return { from: { row: r, col: c }, to: { row: cr, col: cc } };
-                                        }
-                                    }
-                                    // Fallback to center
-                                    if (board[1][1] === '') {
-                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
-                                    }
-                                    // Move to any empty
-                                    for (let tr = 0; tr < 3; tr++) {
-                                        for (let tc = 0; tc < 3; tc++) {
-                                            if (board[tr][tc] === '') {
-                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        return null;
-                    }
-                }
-            };
-
-            let currentStrategy = 'standard';
-            let strategyIndex = 0;
-            const strategyNames = Object.keys(openingStrategies);
-
-            // 🔥 Function to get AI's opening move with strategy
-            function getAIOpeningMove(board, hasMoved, aiSide) {
-                const strategy = openingStrategies[currentStrategy];
-                const move = strategy.getFirstMove(board, aiSide);
-                
-                if (move) {
-                    console.log(`🎯 AI using opening strategy: ${strategy.name}`);
-                    return move;
-                }
-                return null;
-            }
-
-            // 🔥 Record a draw to potentially change strategy
-            function recordDraw() {
-                drawHistory.draws++;
-                drawHistory.lastOpenings.push(currentStrategy);
-                if (drawHistory.lastOpenings.length > drawHistory.maxOpenings) {
-                    drawHistory.lastOpenings.shift();
-                }
-                
-                // Change strategy after 2 consecutive draws
-                if (drawHistory.draws % 2 === 0) {
-                    const nextIndex = (strategyIndex + 1) % strategyNames.length;
-                    currentStrategy = strategyNames[nextIndex];
-                    strategyIndex = nextIndex;
-                    showToast(`🤖 AI changing strategy to: ${openingStrategies[currentStrategy].name}`);
-                    console.log(`🔄 AI changed strategy to: ${currentStrategy}`);
-                }
-            }
 
             let gameAI = {
                 board: [
@@ -1472,7 +1314,7 @@
                 drawClaimed: false,
                 playerSide: 'X',
                 aiSide: 'O',
-                moveCount: 0,
+                totalMoves: 0,
                 usedOpening: false
             };
 
@@ -1703,19 +1545,35 @@
                 return false;
             }
 
-            function findBestMoveAI(board, hasMoved, aiSide, playerSide, isOpening) {
-                // 🔥 If it's the opening move (first AI move), use the strategy
-                if (isOpening) {
-                    const openingMove = getAIOpeningMove(board, hasMoved, aiSide);
-                    if (openingMove) {
-                        return openingMove;
-                    }
-                }
+            // 🔥 NEW: Evaluate a move and return its score with win/loss/draw info
+            function evaluateMove(board, hasMoved, fromRow, fromCol, toRow, toCol, aiSide, playerSide) {
+                // Make the move
+                const orig = board[toRow][toCol];
+                const origMoved = hasMoved[toRow][toCol];
+                board[toRow][toCol] = aiSide;
+                board[fromRow][fromCol] = '';
+                hasMoved[toRow][toCol] = true;
 
-                let bestScore = -Infinity;
-                let bestMove = null;
-                const moves = [];
+                // Check immediate win
+                const isWin = checkWinNowAI(board, hasMoved, aiSide);
                 
+                // Use minimax to evaluate the position
+                const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
+                
+                // Undo the move
+                board[fromRow][fromCol] = aiSide;
+                board[toRow][toCol] = orig;
+                hasMoved[toRow][toCol] = origMoved;
+
+                return { score, isWin };
+            }
+
+            // 🔥 NEW: Find non-losing moves for the opening
+            function findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide) {
+                const moves = [];
+                const results = [];
+                
+                // Get all possible first moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1729,40 +1587,139 @@
                         }
                     }
                 }
-                
-                moves.sort((a, b) => {
-                    const scoreA = getMovePriorityAI(a, board, hasMoved, aiSide);
-                    const scoreB = getMovePriorityAI(b, board, hasMoved, aiSide);
-                    return scoreB - scoreA;
-                });
-                
+
+                // Evaluate each move
                 for (const move of moves) {
                     const { from, to } = move;
-                    const orig = board[to.row][to.col];
-                    const origMoved = hasMoved[to.row][to.col];
-                    board[to.row][to.col] = aiSide;
-                    board[from.row][from.col] = '';
-                    hasMoved[to.row][to.col] = true;
+                    const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
+                    results.push({
+                        move: move,
+                        score: result.score,
+                        isWin: result.isWin
+                    });
+                }
 
-                    if (checkWinNowAI(board, hasMoved, aiSide)) {
-                        board[from.row][from.col] = aiSide;
-                        board[to.row][to.col] = orig;
-                        hasMoved[to.row][to.col] = origMoved;
-                        return move;
-                    }
-                    
-                    const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
-                    
-                    board[from.row][from.col] = aiSide;
-                    board[to.row][to.col] = orig;
-                    hasMoved[to.row][to.col] = origMoved;
-                    
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestMove = move;
+                // Find the best score (maximizing for AI)
+                let bestScore = -Infinity;
+                for (const r of results) {
+                    if (r.score > bestScore) bestScore = r.score;
+                }
+
+                // A move is non-losing if it doesn't lead to a loss (score >= 0)
+                // or if it's the best available
+                const nonLosingMoves = results.filter(r => r.score >= 0);
+                
+                // If no non-losing moves, return the best move
+                if (nonLosingMoves.length === 0) {
+                    const bestResults = results.filter(r => r.score === bestScore);
+                    return bestResults.map(r => r.move);
+                }
+
+                // If there are winning moves, return only those
+                const winningMoves = results.filter(r => r.isWin);
+                if (winningMoves.length > 0) {
+                    return winningMoves.map(r => r.move);
+                }
+
+                // Otherwise return all non-losing moves
+                return nonLosingMoves.map(r => r.move);
+            }
+
+            // 🔥 NEW: Find the best move with win percentage tie-breaking
+            function findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide) {
+                const moves = [];
+                const results = [];
+                
+                // Get all possible moves
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        if (board[r][c] === aiSide) {
+                            for (let tr = 0; tr < 3; tr++) {
+                                for (let tc = 0; tc < 3; tc++) {
+                                    if (board[tr][tc] === '') {
+                                        moves.push({ from: { row: r, col: c }, to: { row: tr, col: tc } });
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                return bestMove;
+
+                // Evaluate each move
+                for (const move of moves) {
+                    const { from, to } = move;
+                    const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
+                    results.push({
+                        move: move,
+                        score: result.score,
+                        isWin: result.isWin
+                    });
+                }
+
+                // Check if there's a winning move
+                const winningMoves = results.filter(r => r.isWin);
+                if (winningMoves.length > 0) {
+                    // Return a random winning move
+                    return winningMoves[Math.floor(Math.random() * winningMoves.length)].move;
+                }
+
+                // Find the best score
+                let bestScore = -Infinity;
+                for (const r of results) {
+                    if (r.score > bestScore) bestScore = r.score;
+                }
+
+                // Get all moves with the best score
+                const bestMoves = results.filter(r => r.score === bestScore);
+
+                // If there's only one best move, return it
+                if (bestMoves.length === 1) {
+                    return bestMoves[0].move;
+                }
+
+                // If the best score is a draw (0) or better, choose the one with highest win potential
+                if (bestScore >= 0) {
+                    // Calculate win potential for each best move
+                    let maxPotential = -Infinity;
+                    let bestPotentialMove = bestMoves[0];
+                    
+                    for (const result of bestMoves) {
+                        const { from, to } = result.move;
+                        const tempBoard = board.map(row => [...row]);
+                        const tempMoved = hasMoved.map(row => [...row]);
+                        tempBoard[to.row][to.col] = aiSide;
+                        tempBoard[from.row][from.col] = '';
+                        tempMoved[to.row][to.col] = true;
+                        
+                        const potential = evaluateWinningPotential(tempBoard, tempMoved, aiSide);
+                        if (potential > maxPotential) {
+                            maxPotential = potential;
+                            bestPotentialMove = result.move;
+                        }
+                    }
+                    return bestPotentialMove;
+                }
+
+                // If all moves lose, return the one with the highest score (least bad)
+                return bestMoves[0].move;
+            }
+
+            function findBestMoveAI(board, hasMoved, aiSide, playerSide, isOpening) {
+                // 🔥 For the opening move (move 1), randomly choose between non-losing moves
+                if (isOpening) {
+                    const nonLosingMoves = findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide);
+                    if (nonLosingMoves.length > 0) {
+                        const randomIndex = Math.floor(Math.random() * nonLosingMoves.length);
+                        const selected = nonLosingMoves[randomIndex];
+                        console.log(`🎲 Opening move: Randomly selected from ${nonLosingMoves.length} non-losing moves`);
+                        return selected;
+                    }
+                    // Fallback: if no non-losing moves found, use the best move
+                    console.log('⚠️ No non-losing moves found, using best move');
+                }
+
+                // 🔥 For all other moves, use the best move with win percentage tie-breaking
+                return findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide);
             }
 
             function renderAIBoard() {
@@ -1795,7 +1752,7 @@
                 } else if (g.currentPlayer === g.playerSide) {
                     statusAI.textContent = `Your turn (${g.playerSide})`;
                 } else {
-                    statusAI.textContent = `AI is thinking... (${openingStrategies[currentStrategy].name})`;
+                    statusAI.textContent = `AI thinking...`;
                 }
                 if (g.drawAvailable && !g.drawClaimed && !g.gameOver) {
                     claimDrawAI.classList.add('visible');
@@ -1826,7 +1783,7 @@
                     g.hasMoved[row][col] = true;
                     g.selectedCell = null;
                     g.validMoves = [];
-                    g.moveCount++;
+                    g.totalMoves++;
                     const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
                     g.positionHistory.push(key);
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
@@ -1834,16 +1791,12 @@
 
                     if (checkWinNowAI(g.board, g.hasMoved, g.playerSide)) {
                         g.gameOver = true;
-                        // Reset draw history on win
-                        drawHistory.draws = 0;
                         showResult('You Win! 🎉', 'You defeated the AI!', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
                     if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
-                        // Record draw and potentially change strategy
-                        recordDraw();
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
@@ -1872,8 +1825,9 @@
                 const g = gameAI;
                 if (g.gameOver || g.currentPlayer !== g.aiSide) return;
                 
-                // Check if this is the opening move
-                const isOpening = g.moveCount === 0;
+                const isOpening = g.totalMoves === 0;
+                console.log(`AI move #${g.totalMoves}, isOpening: ${isOpening}`);
+                
                 const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide, isOpening);
                 
                 if (move) {
@@ -1881,7 +1835,7 @@
                     g.board[to.row][to.col] = g.aiSide;
                     g.board[from.row][from.col] = '';
                     g.hasMoved[to.row][to.col] = true;
-                    g.moveCount++;
+                    g.totalMoves++;
                     g.usedOpening = isOpening;
                     
                     const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
@@ -1891,14 +1845,12 @@
 
                     if (checkWinNowAI(g.board, g.hasMoved, g.aiSide)) {
                         g.gameOver = true;
-                        drawHistory.draws = 0;
                         showResult('AI Wins! 😢', 'The AI defeated you.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
                     if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
-                        recordDraw();
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
@@ -1930,7 +1882,7 @@
                     drawClaimed: false,
                     playerSide: 'X',
                     aiSide: 'O',
-                    moveCount: 0,
+                    totalMoves: 0,
                     usedOpening: false
                 };
                 aiGameStarted = false;
@@ -1942,7 +1894,7 @@
             function setPlayerSide(side) {
                 gameAI.playerSide = side;
                 gameAI.aiSide = (side === 'X' ? 'O' : 'X');
-                gameAI.moveCount = 0;
+                gameAI.totalMoves = 0;
                 gameAI.usedOpening = false;
                 
                 document.getElementById('playerXAI').querySelector('h3').textContent = side === 'X' ? 'Player (X)' : 'AI (X)';
@@ -1968,6 +1920,7 @@
                 gameOverlay.classList.remove('active');
                 choiceOverlay.classList.add('hidden');
                 aiGameStarted = true;
+                
                 renderAIBoard();
 
                 if (gameAI.playerSide === 'O') {
@@ -1980,30 +1933,17 @@
             document.querySelectorAll('.choice-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const side = e.currentTarget.dataset.side;
-                    // Reset strategy when player chooses a side
-                    strategyIndex = 0;
-                    currentStrategy = strategyNames[0];
-                    drawHistory.draws = 0;
-                    drawHistory.lastOpenings = [];
                     setPlayerSide(side);
                 });
             });
 
-            document.getElementById('resetAI').addEventListener('click', () => {
-                // Reset strategy when resetting
-                strategyIndex = 0;
-                currentStrategy = strategyNames[0];
-                drawHistory.draws = 0;
-                drawHistory.lastOpenings = [];
-                resetAI();
-            });
+            document.getElementById('resetAI').addEventListener('click', resetAI);
 
             claimDrawAI.addEventListener('click', () => {
                 if (gameAI.drawAvailable && !gameAI.drawClaimed && !gameAI.gameOver) {
                     gameAI.drawClaimed = true;
                     gameAI.gameOver = true;
                     claimDrawAI.classList.remove('visible');
-                    recordDraw();
                     showResult('Draw!', 'You claimed a draw by repetition.', '⭐ 1500', '');
                     renderAIBoard();
                 }
@@ -2191,11 +2131,6 @@
                 if (activeTab.dataset.tab === 'online') {
                     onlineManager.leaveGame();
                 } else if (activeTab.dataset.tab === 'vsAI') {
-                    // Reset strategy when playing again
-                    strategyIndex = 0;
-                    currentStrategy = strategyNames[0];
-                    drawHistory.draws = 0;
-                    drawHistory.lastOpenings = [];
                     resetAI();
                     choiceOverlay.classList.remove('hidden');
                 } else {
@@ -2276,12 +2211,10 @@
 
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
-            console.log('AI Strategy:', currentStrategy);
             getPlayerRegistry().then(registry => {
                 console.log('Players registered:', Object.keys(registry).length);
             });
         });
     </script>
-
-
-</body></html>
+</body>
+</html>
