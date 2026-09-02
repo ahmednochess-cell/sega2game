@@ -1,8 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sega 2 – Online Multiplayer</title>
     
     <!-- 🔥 FIREBASE SDK -->
@@ -98,7 +97,7 @@
     <div class="toast" id="toast"></div>
 
     <!-- SIDE CHOICE OVERLAY (for vs AI) -->
-    <div class="choice-overlay" id="choiceOverlay">
+    <div class="choice-overlay hidden" id="choiceOverlay">
         <div class="choice-box">
             <h2>⚔️ Choose Your Side</h2>
             <p style="margin-bottom: 10px; color: #444;">You play as <strong>X</strong> (top row) or <strong>O</strong> (bottom row).<br>X always starts.</p>
@@ -125,24 +124,24 @@
         <!-- VS AI TAB (DEFAULT) -->
         <div class="tab-content active" id="tab-vsAI">
             <div class="game-info">
-                <div class="status" id="statusAI">Your turn (X)</div>
+                <div class="status" id="statusAI">Your turn (O)</div>
                 <div class="controls">
                     <button id="resetAI">Reset Game</button>
                 </div>
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardAI"></div>
+                    <div class="board" id="boardAI"><div class="cell X inactive" data-row="0" data-col="0">X</div><div class="cell" data-row="0" data-col="1"></div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell" data-row="1" data-col="1"></div><div class="cell X" data-row="1" data-col="2">X</div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawAI">🔄 Claim Draw</button>
                     </div>
                     <div class="player-info">
                         <div class="player player-x" id="playerXAI">
-                            <h3>Player (X)</h3>
+                            <h3>AI (X)</h3>
                             <p>Top Row</p>
                         </div>
                         <div class="player player-o" id="playerOAI">
-                            <h3>AI (O)</h3>
+                            <h3>Player (O)</h3>
                             <p>Bottom Row</p>
                         </div>
                     </div>
@@ -166,15 +165,15 @@
         <div class="tab-content" id="tab-online">
             <div class="lobby-area">
                 <div class="player-profile">
-                    <span class="player-id-box" id="myIdDisplay">ID: -----</span>
-                    <span class="player-elo" id="myEloDisplay">⭐ 1500</span>
+                    <span class="player-id-box" id="myIdDisplay">ID: 12405</span>
+                    <span class="player-elo" id="myEloDisplay">⭐ 1516</span>
                     <span class="online-status" id="onlineStatus">● Online</span>
                     <span class="queue-status" id="queueStatus"></span>
-                    <span class="debug-info" id="debugInfo"></span>
+                    <span class="debug-info" id="debugInfo">Queue: 0 | Players: 3</span>
                 </div>
                 <div class="lobby-controls">
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
-                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
+                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5">
                     <button class="btn-join" id="joinOpponentBtn">Join</button>
                     <button id="resetOnlineBtn">Leave Game</button>
                 </div>
@@ -189,7 +188,7 @@
 
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardOnline"></div>
+                    <div class="board" id="boardOnline"><div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Waiting for opponent...</div></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawOnline">🔄 Claim Draw</button>
                     </div>
@@ -230,7 +229,7 @@
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardFriend"></div>
+                    <div class="board" id="boardFriend"><div class="cell X inactive" data-row="0" data-col="0">X</div><div class="cell X inactive" data-row="0" data-col="1">X</div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell" data-row="1" data-col="1"></div><div class="cell" data-row="1" data-col="2"></div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawFriend">🔄 Claim Draw</button>
                     </div>
@@ -258,7 +257,8 @@
         </div>
 
         <footer>
-            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243"</p>
+            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243" 
+big shout for brave and deepseek </p>
         </footer>
     </div>
 
@@ -2216,5 +2216,6 @@
             });
         });
     </script>
-</body>
-</html>
+
+
+</body></html>
