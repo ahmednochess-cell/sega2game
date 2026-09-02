@@ -1283,13 +1283,174 @@
             };
 
             // ============================================================
-            // 2. VS AI - IMPROVED WITH DEPTH 10
+            // 2. VS AI - WITH ADAPTIVE OPENING STRATEGY
             // ============================================================
 
             const boardAI = document.getElementById('boardAI');
             const statusAI = document.getElementById('statusAI');
             const claimDrawAI = document.getElementById('claimDrawAI');
             const choiceOverlay = document.getElementById('choiceOverlay');
+
+            // 🔥 Track draw history for the AI
+            const drawHistory = {
+                draws: 0,
+                lastOpenings: [],
+                maxOpenings: 6
+            };
+
+            // 🔥 Different opening strategies for the AI
+            const openingStrategies = {
+                // Strategy 1: Standard - move leftmost piece first
+                standard: {
+                    name: 'Standard',
+                    getFirstMove: (board, aiSide) => {
+                        for (let r = 0; r < 3; r++) {
+                            for (let c = 0; c < 3; c++) {
+                                if (board[r][c] === aiSide) {
+                                    // Move to center if possible
+                                    if (board[1][1] === '') {
+                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
+                                    }
+                                    // Move to first available empty
+                                    for (let tr = 0; tr < 3; tr++) {
+                                        for (let tc = 0; tc < 3; tc++) {
+                                            if (board[tr][tc] === '') {
+                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                },
+                // Strategy 2: Aggressive - move rightmost piece first
+                aggressive: {
+                    name: 'Aggressive',
+                    getFirstMove: (board, aiSide) => {
+                        for (let r = 2; r >= 0; r--) {
+                            for (let c = 2; c >= 0; c--) {
+                                if (board[r][c] === aiSide) {
+                                    // Move to center if possible
+                                    if (board[1][1] === '') {
+                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
+                                    }
+                                    // Move to first available empty
+                                    for (let tr = 0; tr < 3; tr++) {
+                                        for (let tc = 0; tc < 3; tc++) {
+                                            if (board[tr][tc] === '') {
+                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                },
+                // Strategy 3: Center-focused - prioritize center piece first
+                centerFocused: {
+                    name: 'Center-Focused',
+                    getFirstMove: (board, aiSide) => {
+                        // First try to move the center piece
+                        if (board[1][1] === aiSide) {
+                            for (let tr = 0; tr < 3; tr++) {
+                                for (let tc = 0; tc < 3; tc++) {
+                                    if (board[tr][tc] === '') {
+                                        return { from: { row: 1, col: 1 }, to: { row: tr, col: tc } };
+                                    }
+                                }
+                            }
+                        }
+                        // Otherwise use standard
+                        for (let r = 0; r < 3; r++) {
+                            for (let c = 0; c < 3; c++) {
+                                if (board[r][c] === aiSide) {
+                                    if (board[1][1] === '') {
+                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
+                                    }
+                                    for (let tr = 0; tr < 3; tr++) {
+                                        for (let tc = 0; tc < 3; tc++) {
+                                            if (board[tr][tc] === '') {
+                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                },
+                // Strategy 4: Corners - move to corners first
+                corners: {
+                    name: 'Corners',
+                    getFirstMove: (board, aiSide) => {
+                        const corners = [[0,0], [0,2], [2,0], [2,2]];
+                        for (let r = 0; r < 3; r++) {
+                            for (let c = 0; c < 3; c++) {
+                                if (board[r][c] === aiSide) {
+                                    // Try to move to a corner
+                                    for (const [cr, cc] of corners) {
+                                        if (board[cr][cc] === '') {
+                                            return { from: { row: r, col: c }, to: { row: cr, col: cc } };
+                                        }
+                                    }
+                                    // Fallback to center
+                                    if (board[1][1] === '') {
+                                        return { from: { row: r, col: c }, to: { row: 1, col: 1 } };
+                                    }
+                                    // Move to any empty
+                                    for (let tr = 0; tr < 3; tr++) {
+                                        for (let tc = 0; tc < 3; tc++) {
+                                            if (board[tr][tc] === '') {
+                                                return { from: { row: r, col: c }, to: { row: tr, col: tc } };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                }
+            };
+
+            let currentStrategy = 'standard';
+            let strategyIndex = 0;
+            const strategyNames = Object.keys(openingStrategies);
+
+            // 🔥 Function to get AI's opening move with strategy
+            function getAIOpeningMove(board, hasMoved, aiSide) {
+                const strategy = openingStrategies[currentStrategy];
+                const move = strategy.getFirstMove(board, aiSide);
+                
+                if (move) {
+                    console.log(`🎯 AI using opening strategy: ${strategy.name}`);
+                    return move;
+                }
+                return null;
+            }
+
+            // 🔥 Record a draw to potentially change strategy
+            function recordDraw() {
+                drawHistory.draws++;
+                drawHistory.lastOpenings.push(currentStrategy);
+                if (drawHistory.lastOpenings.length > drawHistory.maxOpenings) {
+                    drawHistory.lastOpenings.shift();
+                }
+                
+                // Change strategy after 2 consecutive draws
+                if (drawHistory.draws % 2 === 0) {
+                    const nextIndex = (strategyIndex + 1) % strategyNames.length;
+                    currentStrategy = strategyNames[nextIndex];
+                    strategyIndex = nextIndex;
+                    showToast(`🤖 AI changing strategy to: ${openingStrategies[currentStrategy].name}`);
+                    console.log(`🔄 AI changed strategy to: ${currentStrategy}`);
+                }
+            }
 
             let gameAI = {
                 board: [
@@ -1311,7 +1472,9 @@
                 drawAvailable: false,
                 drawClaimed: false,
                 playerSide: 'X',
-                aiSide: 'O'
+                aiSide: 'O',
+                moveCount: 0,
+                usedOpening: false
             };
 
             let aiGameStarted = false;
@@ -1362,6 +1525,49 @@
                 return score;
             }
 
+            function evaluateWinningPotential(board, hasMoved, player) {
+                let potential = 0;
+                
+                const lines = [
+                    [[0,0],[0,1],[0,2]], [[1,0],[1,1],[1,2]], [[2,0],[2,1],[2,2]],
+                    [[0,0],[1,0],[2,0]], [[0,1],[1,1],[2,1]], [[0,2],[1,2],[2,2]],
+                    [[0,0],[1,1],[2,2]], [[0,2],[1,1],[2,0]]
+                ];
+                
+                for (const line of lines) {
+                    let playerCount = 0;
+                    let emptyCount = 0;
+                    let movedCount = 0;
+                    
+                    for (const [r, c] of line) {
+                        if (board[r][c] === player) {
+                            playerCount++;
+                            if (hasMoved[r][c]) movedCount++;
+                        } else if (board[r][c] === '') {
+                            emptyCount++;
+                        }
+                    }
+                    
+                    if (playerCount > 0 && emptyCount > 0) {
+                        potential += playerCount * 5;
+                        potential += emptyCount * 2;
+                        potential += movedCount * 3;
+                    }
+                }
+                
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        if (board[r][c] === player && hasMoved[r][c]) {
+                            potential += 2;
+                            if (r === 1 && c === 1) potential += 3;
+                            if ((r === 0 || r === 2) && (c === 0 || c === 2)) potential += 2;
+                        }
+                    }
+                }
+                
+                return potential;
+            }
+
             function minimaxAI(board, hasMoved, depth, alpha, beta, isMaximizing, pathLength, aiSide, playerSide) {
                 function checkWin2(b, m, p) {
                     for (let r = 0; r < 3; r++) {
@@ -1402,12 +1608,21 @@
 
                 if (checkWin2(board, hasMoved, aiSide)) return 100 - pathLength;
                 if (checkWin2(board, hasMoved, playerSide)) return -100 + pathLength;
-                if (isFull(board) || depth === 0) return evaluateBoardAI(board, hasMoved, aiSide, playerSide);
+                if (isFull(board) || depth === 0) {
+                    let baseScore = evaluateBoardAI(board, hasMoved, aiSide, playerSide);
+                    
+                    if (baseScore === 0) {
+                        const aiPotential = evaluateWinningPotential(board, hasMoved, aiSide);
+                        const playerPotential = evaluateWinningPotential(board, hasMoved, playerSide);
+                        baseScore = (aiPotential - playerPotential) * 0.5;
+                    }
+                    
+                    return baseScore;
+                }
 
                 if (isMaximizing) {
                     let maxScore = -Infinity;
                     const moves = getAllMoves(board, aiSide);
-                    // Sort moves for better alpha-beta pruning
                     moves.sort((a, b) => {
                         const scoreA = getMovePriorityAI(a, board, hasMoved, aiSide);
                         const scoreB = getMovePriorityAI(b, board, hasMoved, aiSide);
@@ -1432,7 +1647,6 @@
                 } else {
                     let minScore = Infinity;
                     const moves = getAllMoves(board, playerSide);
-                    // Sort moves for better alpha-beta pruning
                     moves.sort((a, b) => {
                         const scoreA = getMovePriorityAI(a, board, hasMoved, playerSide);
                         const scoreB = getMovePriorityAI(b, board, hasMoved, playerSide);
@@ -1457,24 +1671,23 @@
                 }
             }
 
-            // Move priority helper for AI
             function getMovePriorityAI(move, board, hasMoved, player) {
                 let score = 0;
                 const { from, to } = move;
                 
-                // Prefer moving to center
                 if (to.row === 1 && to.col === 1) score += 20;
-                // Prefer corners
                 if ((to.row === 0 || to.row === 2) && (to.col === 0 || to.col === 2)) score += 10;
-                // Prefer moving pieces that haven't moved yet
                 if (!hasMoved[from.row][from.col]) score += 15;
-                // Prefer moving to positions that create threats
+                
                 const tempBoard = board.map(row => [...row]);
                 const tempMoved = hasMoved.map(row => [...row]);
                 tempBoard[to.row][to.col] = player;
                 tempBoard[from.row][from.col] = '';
                 tempMoved[to.row][to.col] = true;
                 if (checkWinNowAI(tempBoard, tempMoved, player)) score += 50;
+                
+                const potential = evaluateWinningPotential(tempBoard, tempMoved, player);
+                score += potential * 0.3;
                 
                 return score;
             }
@@ -1491,12 +1704,19 @@
                 return false;
             }
 
-            function findBestMoveAI(board, hasMoved, aiSide, playerSide) {
+            function findBestMoveAI(board, hasMoved, aiSide, playerSide, isOpening) {
+                // 🔥 If it's the opening move (first AI move), use the strategy
+                if (isOpening) {
+                    const openingMove = getAIOpeningMove(board, hasMoved, aiSide);
+                    if (openingMove) {
+                        return openingMove;
+                    }
+                }
+
                 let bestScore = -Infinity;
                 let bestMove = null;
                 const moves = [];
                 
-                // Get all possible moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1511,7 +1731,6 @@
                     }
                 }
                 
-                // Sort moves by priority for better alpha-beta pruning
                 moves.sort((a, b) => {
                     const scoreA = getMovePriorityAI(a, board, hasMoved, aiSide);
                     const scoreB = getMovePriorityAI(b, board, hasMoved, aiSide);
@@ -1526,7 +1745,6 @@
                     board[from.row][from.col] = '';
                     hasMoved[to.row][to.col] = true;
 
-                    // Check immediate win
                     if (checkWinNowAI(board, hasMoved, aiSide)) {
                         board[from.row][from.col] = aiSide;
                         board[to.row][to.col] = orig;
@@ -1534,7 +1752,6 @@
                         return move;
                     }
                     
-                    // 🔥 Increased depth to 10 for better play
                     const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
                     
                     board[from.row][from.col] = aiSide;
@@ -1579,7 +1796,7 @@
                 } else if (g.currentPlayer === g.playerSide) {
                     statusAI.textContent = `Your turn (${g.playerSide})`;
                 } else {
-                    statusAI.textContent = `AI is thinking...`;
+                    statusAI.textContent = `AI is thinking... (${openingStrategies[currentStrategy].name})`;
                 }
                 if (g.drawAvailable && !g.drawClaimed && !g.gameOver) {
                     claimDrawAI.classList.add('visible');
@@ -1610,6 +1827,7 @@
                     g.hasMoved[row][col] = true;
                     g.selectedCell = null;
                     g.validMoves = [];
+                    g.moveCount++;
                     const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
                     g.positionHistory.push(key);
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
@@ -1617,12 +1835,16 @@
 
                     if (checkWinNowAI(g.board, g.hasMoved, g.playerSide)) {
                         g.gameOver = true;
+                        // Reset draw history on win
+                        drawHistory.draws = 0;
                         showResult('You Win! 🎉', 'You defeated the AI!', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
                     if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
+                        // Record draw and potentially change strategy
+                        recordDraw();
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
@@ -1650,12 +1872,19 @@
             function makeAIMove2() {
                 const g = gameAI;
                 if (g.gameOver || g.currentPlayer !== g.aiSide) return;
-                const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide);
+                
+                // Check if this is the opening move
+                const isOpening = g.moveCount === 0;
+                const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide, isOpening);
+                
                 if (move) {
                     const { from, to } = move;
                     g.board[to.row][to.col] = g.aiSide;
                     g.board[from.row][from.col] = '';
                     g.hasMoved[to.row][to.col] = true;
+                    g.moveCount++;
+                    g.usedOpening = isOpening;
+                    
                     const key = getPositionKey2(g.board, g.hasMoved, g.currentPlayer);
                     g.positionHistory.push(key);
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
@@ -1663,12 +1892,14 @@
 
                     if (checkWinNowAI(g.board, g.hasMoved, g.aiSide)) {
                         g.gameOver = true;
+                        drawHistory.draws = 0;
                         showResult('AI Wins! 😢', 'The AI defeated you.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
                     if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
+                        recordDraw();
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
@@ -1699,7 +1930,9 @@
                     drawAvailable: false,
                     drawClaimed: false,
                     playerSide: 'X',
-                    aiSide: 'O'
+                    aiSide: 'O',
+                    moveCount: 0,
+                    usedOpening: false
                 };
                 aiGameStarted = false;
                 gameOverlay.classList.remove('active');
@@ -1710,6 +1943,9 @@
             function setPlayerSide(side) {
                 gameAI.playerSide = side;
                 gameAI.aiSide = (side === 'X' ? 'O' : 'X');
+                gameAI.moveCount = 0;
+                gameAI.usedOpening = false;
+                
                 document.getElementById('playerXAI').querySelector('h3').textContent = side === 'X' ? 'Player (X)' : 'AI (X)';
                 document.getElementById('playerOAI').querySelector('h3').textContent = side === 'O' ? 'Player (O)' : 'AI (O)';
                 gameAI.board = [
@@ -1745,17 +1981,30 @@
             document.querySelectorAll('.choice-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const side = e.currentTarget.dataset.side;
+                    // Reset strategy when player chooses a side
+                    strategyIndex = 0;
+                    currentStrategy = strategyNames[0];
+                    drawHistory.draws = 0;
+                    drawHistory.lastOpenings = [];
                     setPlayerSide(side);
                 });
             });
 
-            document.getElementById('resetAI').addEventListener('click', resetAI);
+            document.getElementById('resetAI').addEventListener('click', () => {
+                // Reset strategy when resetting
+                strategyIndex = 0;
+                currentStrategy = strategyNames[0];
+                drawHistory.draws = 0;
+                drawHistory.lastOpenings = [];
+                resetAI();
+            });
 
             claimDrawAI.addEventListener('click', () => {
                 if (gameAI.drawAvailable && !gameAI.drawClaimed && !gameAI.gameOver) {
                     gameAI.drawClaimed = true;
                     gameAI.gameOver = true;
                     claimDrawAI.classList.remove('visible');
+                    recordDraw();
                     showResult('Draw!', 'You claimed a draw by repetition.', '⭐ 1500', '');
                     renderAIBoard();
                 }
@@ -1943,6 +2192,11 @@
                 if (activeTab.dataset.tab === 'online') {
                     onlineManager.leaveGame();
                 } else if (activeTab.dataset.tab === 'vsAI') {
+                    // Reset strategy when playing again
+                    strategyIndex = 0;
+                    currentStrategy = strategyNames[0];
+                    drawHistory.draws = 0;
+                    drawHistory.lastOpenings = [];
                     resetAI();
                     choiceOverlay.classList.remove('hidden');
                 } else {
@@ -2023,6 +2277,7 @@
 
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
+            console.log('AI Strategy:', currentStrategy);
             getPlayerRegistry().then(registry => {
                 console.log('Players registered:', Object.keys(registry).length);
             });
