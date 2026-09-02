@@ -306,12 +306,11 @@
             }
 
             // ============================================================
-            // 1. ONLINE SYSTEM - FIREBASE VERSION (FIXED)
+            // 1. ONLINE SYSTEM - FIREBASE VERSION
             // ============================================================
 
             const MY_ID_KEY = 'sega2_playerId';
 
-            // --- Firebase Storage Functions ---
             async function getPlayerRegistry() {
                 const snapshot = await db.ref('players').once('value');
                 return snapshot.val() || {};
@@ -605,7 +604,7 @@
                 }
             }
 
-            // ---- Online Manager (FIXED - uses unified polling for both players) ----
+            // ---- Online Manager ----
             const onlineManager = {
                 currentPlayer: null,
                 game: null,
@@ -630,14 +629,12 @@
                     await cleanQueue();
                     await this.checkForExistingGame();
 
-                    // Start the queue polling system
                     this.startQueuePolling();
 
                     this.updateUI();
                     this.renderBoard();
                     this.startSync();
 
-                    // Force check for game after 2 seconds
                     setTimeout(() => {
                         if (!this.game && this.currentPlayer.opponentId) {
                             console.log('⚠️ Force checking for existing game...');
@@ -648,16 +645,13 @@
                     return this.currentPlayer;
                 },
 
-                // UNIFIED queue polling system - works for both players
                 startQueuePolling() {
                     if (this.queuePollInterval) clearInterval(this.queuePollInterval);
                     this.queuePollInterval = setInterval(async () => {
-                        // Only check if we're in the queue or if we're not in a game
                         if (this.inQueue || (!this.matchFound && !this.currentPlayer.inGame)) {
                             const queue = await getQueue();
                             const registry = await getPlayerRegistry();
                             
-                            // Clean queue of players who are no longer waiting
                             const cleanQueueList = queue.filter(id => {
                                 const p = registry[id];
                                 return p && p.waitingForMatch && !p.inGame;
@@ -667,7 +661,6 @@
                                 saveQueue(cleanQueueList);
                             }
                             
-                            // Check if we're in the queue and there's another waiting player
                             if (this.inQueue) {
                                 const waitingOthers = cleanQueueList.filter(id => 
                                     id !== this.currentPlayer.id && 
@@ -680,13 +673,11 @@
                                     const opponentId = waitingOthers[0];
                                     console.log('🎯 Queue polling found opponent:', opponentId);
                                     
-                                    // Remove both players from queue
                                     const newQueue = cleanQueueList.filter(id => 
                                         id !== opponentId && id !== this.currentPlayer.id
                                     );
                                     saveQueue(newQueue);
                                     
-                                    // Update player status
                                     const me = this.currentPlayer;
                                     me.waitingForMatch = false;
                                     const reg = await getPlayerRegistry();
@@ -702,10 +693,9 @@
                                 }
                             }
                             
-                            // Update UI with queue info
                             this.updateUI();
                         }
-                    }, 1000); // Check every second
+                    }, 1000);
                 },
 
                 async checkForExistingGame() {
@@ -800,7 +790,6 @@
                     }
                 },
 
-                // ---- Find Opponent ----
                 async findOpponent() {
                     if (this.inQueue) {
                         this.leaveQueue();
@@ -816,7 +805,6 @@
                     const registry = await getPlayerRegistry();
                     let queue = await getQueue();
 
-                    // Check for waiting players
                     const waitingPlayers = queue.filter(id =>
                         id !== this.currentPlayer.id &&
                         registry[id] &&
@@ -843,7 +831,6 @@
                         return;
                     }
 
-                    // Add to queue
                     const me = this.currentPlayer;
                     me.waitingForMatch = true;
                     const reg = await getPlayerRegistry();
@@ -867,9 +854,10 @@
                     this.inQueue = false;
                     const me = this.currentPlayer;
                     me.waitingForMatch = false;
-                    const reg = getPlayerRegistry();
-                    reg[me.id] = me;
-                    savePlayerRegistry(reg);
+                    getPlayerRegistry().then(reg => {
+                        reg[me.id] = me;
+                        savePlayerRegistry(reg);
+                    });
 
                     getQueue().then(queue => {
                         const newQueue = queue.filter(id => id !== me.id);
@@ -881,7 +869,6 @@
                     this.renderBoard();
                 },
 
-                // ---- Join Opponent ----
                 async joinOpponent(opponentId) {
                     if (!opponentId || opponentId.length !== 5) {
                         showToast('Please enter a valid 5-digit ID');
@@ -905,7 +892,6 @@
                         return;
                     }
 
-                    // If opponent is in queue, match with them
                     let queue = await getQueue();
                     if (queue.includes(opponentId) && opponent.waitingForMatch) {
                         const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
@@ -920,7 +906,6 @@
                             savePlayerRegistry(reg);
                         }
                         
-                        // Mark opponent as not waiting
                         const reg = await getPlayerRegistry();
                         if (reg[opponentId]) {
                             reg[opponentId].waitingForMatch = false;
@@ -932,12 +917,10 @@
                         return;
                     }
 
-                    // Direct challenge
                     showToast('Starting match with ' + opponentId);
                     await this.startMatch(opponentId);
                 },
 
-                // ---- Start Match ----
                 async startMatch(opponentId) {
                     console.log('🚀 Starting match with:', opponentId);
                     const registry = await getPlayerRegistry();
@@ -983,7 +966,6 @@
                     }
                 },
 
-                // ---- Simulate Opponent ----
                 simulateOpponentMove() {
                     if (!this.game || this.game.gameOver) return;
                     if (this.game.currentPlayer === this.mySide) return;
@@ -1043,7 +1025,6 @@
                     return moves;
                 },
 
-                // ---- Handle Game End ----
                 async handleGameEnd() {
                     const game = this.game;
                     if (!game || !game.gameOver) return;
@@ -1114,7 +1095,6 @@
                     this.renderBoard();
                 },
 
-                // ---- Leave Game ----
                 async leaveGame() {
                     if (this.game && !this.game.gameOver) {
                         this.game.gameOver = true;
@@ -1143,7 +1123,6 @@
                     showToast('Left game');
                 },
 
-                // ---- UI ----
                 updateUI() {
                     const me = this.currentPlayer;
                     document.getElementById('myIdDisplay').textContent = `ID: ${me.id}`;
@@ -1190,7 +1169,6 @@
                     });
                 },
 
-                // ---- Render Board ----
                 renderBoard() {
                     const game = this.game;
                     const boardEl = document.getElementById('boardOnline');
@@ -1257,7 +1235,6 @@
                     }
                 },
 
-                // ---- Handle Click ----
                 handleClick(row, col) {
                     const game = this.game;
                     if (!game || game.gameOver) return;
@@ -1306,7 +1283,7 @@
             };
 
             // ============================================================
-            // 2. VS AI - FULL SMART AI (UNCHANGED)
+            // 2. VS AI - IMPROVED WITH DEPTH 10
             // ============================================================
 
             const boardAI = document.getElementById('boardAI');
@@ -1351,9 +1328,7 @@
             }
 
             function evaluateLineAI(line, aiSide, playerSide) {
-                let ai = 0,
-                    player = 0,
-                    empty = 0;
+                let ai = 0, player = 0, empty = 0;
                 for (const p of line) {
                     if (p === aiSide) ai++;
                     else if (p === playerSide) player++;
@@ -1372,14 +1347,11 @@
                 let score = 0;
                 if (board[1][1] === aiSide) score += 3;
                 else if (board[1][1] === playerSide) score -= 3;
-                for (let r = 0; r < 3; r++) score += evaluateLineAI([board[r][0], board[r][1], board[r][2]], aiSide,
-                    playerSide);
-                for (let c = 0; c < 3; c++) score += evaluateLineAI([board[0][c], board[1][c], board[2][c]], aiSide,
-                    playerSide);
+                for (let r = 0; r < 3; r++) score += evaluateLineAI([board[r][0], board[r][1], board[r][2]], aiSide, playerSide);
+                for (let c = 0; c < 3; c++) score += evaluateLineAI([board[0][c], board[1][c], board[2][c]], aiSide, playerSide);
                 score += evaluateLineAI([board[0][0], board[1][1], board[2][2]], aiSide, playerSide);
                 score += evaluateLineAI([board[0][2], board[1][1], board[2][0]], aiSide, playerSide);
-                let aiAct = 0,
-                    plAct = 0;
+                let aiAct = 0, plAct = 0;
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide && hasMoved[r][c]) aiAct++;
@@ -1435,6 +1407,12 @@
                 if (isMaximizing) {
                     let maxScore = -Infinity;
                     const moves = getAllMoves(board, aiSide);
+                    // Sort moves for better alpha-beta pruning
+                    moves.sort((a, b) => {
+                        const scoreA = getMovePriorityAI(a, board, hasMoved, aiSide);
+                        const scoreB = getMovePriorityAI(b, board, hasMoved, aiSide);
+                        return scoreB - scoreA;
+                    });
                     for (const move of moves) {
                         const { from, to } = move;
                         const orig = board[to.row][to.col];
@@ -1442,8 +1420,7 @@
                         board[to.row][to.col] = aiSide;
                         board[from.row][from.col] = '';
                         hasMoved[to.row][to.col] = true;
-                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, false, pathLength + 1, aiSide,
-                            playerSide);
+                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, false, pathLength + 1, aiSide, playerSide);
                         board[from.row][from.col] = aiSide;
                         board[to.row][to.col] = orig;
                         hasMoved[to.row][to.col] = origMoved;
@@ -1455,6 +1432,12 @@
                 } else {
                     let minScore = Infinity;
                     const moves = getAllMoves(board, playerSide);
+                    // Sort moves for better alpha-beta pruning
+                    moves.sort((a, b) => {
+                        const scoreA = getMovePriorityAI(a, board, hasMoved, playerSide);
+                        const scoreB = getMovePriorityAI(b, board, hasMoved, playerSide);
+                        return scoreB - scoreA;
+                    });
                     for (const move of moves) {
                         const { from, to } = move;
                         const orig = board[to.row][to.col];
@@ -1462,8 +1445,7 @@
                         board[to.row][to.col] = playerSide;
                         board[from.row][from.col] = '';
                         hasMoved[to.row][to.col] = true;
-                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, true, pathLength + 1, aiSide,
-                            playerSide);
+                        const score = minimaxAI(board, hasMoved, depth - 1, alpha, beta, true, pathLength + 1, aiSide, playerSide);
                         board[from.row][from.col] = playerSide;
                         board[to.row][to.col] = orig;
                         hasMoved[to.row][to.col] = origMoved;
@@ -1475,10 +1457,46 @@
                 }
             }
 
+            // Move priority helper for AI
+            function getMovePriorityAI(move, board, hasMoved, player) {
+                let score = 0;
+                const { from, to } = move;
+                
+                // Prefer moving to center
+                if (to.row === 1 && to.col === 1) score += 20;
+                // Prefer corners
+                if ((to.row === 0 || to.row === 2) && (to.col === 0 || to.col === 2)) score += 10;
+                // Prefer moving pieces that haven't moved yet
+                if (!hasMoved[from.row][from.col]) score += 15;
+                // Prefer moving to positions that create threats
+                const tempBoard = board.map(row => [...row]);
+                const tempMoved = hasMoved.map(row => [...row]);
+                tempBoard[to.row][to.col] = player;
+                tempBoard[from.row][from.col] = '';
+                tempMoved[to.row][to.col] = true;
+                if (checkWinNowAI(tempBoard, tempMoved, player)) score += 50;
+                
+                return score;
+            }
+
+            function checkWinNowAI(b, m, p) {
+                for (let r = 0; r < 3; r++) {
+                    if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2]) return true;
+                }
+                for (let c = 0; c < 3; c++) {
+                    if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c]) return true;
+                }
+                if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
+                if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
+                return false;
+            }
+
             function findBestMoveAI(board, hasMoved, aiSide, playerSide) {
                 let bestScore = -Infinity;
                 let bestMove = null;
                 const moves = [];
+                
+                // Get all possible moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1492,6 +1510,14 @@
                         }
                     }
                 }
+                
+                // Sort moves by priority for better alpha-beta pruning
+                moves.sort((a, b) => {
+                    const scoreA = getMovePriorityAI(a, board, hasMoved, aiSide);
+                    const scoreB = getMovePriorityAI(b, board, hasMoved, aiSide);
+                    return scoreB - scoreA;
+                });
+                
                 for (const move of moves) {
                     const { from, to } = move;
                     const orig = board[to.row][to.col];
@@ -1500,30 +1526,21 @@
                     board[from.row][from.col] = '';
                     hasMoved[to.row][to.col] = true;
 
-                    function checkWinNow(b, m, p) {
-                        for (let r = 0; r < 3; r++) {
-                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
-                            return true;
-                        }
-                        for (let c = 0; c < 3; c++) {
-                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
-                            return true;
-                        }
-                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
-                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
-                        return false;
-                    }
-
-                    if (checkWinNow(board, hasMoved, aiSide)) {
+                    // Check immediate win
+                    if (checkWinNowAI(board, hasMoved, aiSide)) {
                         board[from.row][from.col] = aiSide;
                         board[to.row][to.col] = orig;
                         hasMoved[to.row][to.col] = origMoved;
                         return move;
                     }
-                    const score = minimaxAI(board, hasMoved, 6, -Infinity, Infinity, false, 1, aiSide, playerSide);
+                    
+                    // 🔥 Increased depth to 10 for better play
+                    const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
+                    
                     board[from.row][from.col] = aiSide;
                     board[to.row][to.col] = orig;
                     hasMoved[to.row][to.col] = origMoved;
+                    
                     if (score > bestScore) {
                         bestScore = score;
                         bestMove = move;
@@ -1598,28 +1615,13 @@
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
                     if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
 
-                    function checkWinNow(b, m, p) {
-                        for (let r = 0; r < 3; r++) {
-                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
-                            return true;
-                        }
-                        for (let c = 0; c < 3; c++) {
-                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
-                            return true;
-                        }
-                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
-                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
-                        return false;
-                    }
-
-                    if (checkWinNow(g.board, g.hasMoved, g.playerSide)) {
+                    if (checkWinNowAI(g.board, g.hasMoved, g.playerSide)) {
                         g.gameOver = true;
                         showResult('You Win! 🎉', 'You defeated the AI!', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
-                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
-                            '') return false; return true; }(g.board)) {
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
@@ -1659,28 +1661,13 @@
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
                     if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
 
-                    function checkWinNow(b, m, p) {
-                        for (let r = 0; r < 3; r++) {
-                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
-                            return true;
-                        }
-                        for (let c = 0; c < 3; c++) {
-                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
-                            return true;
-                        }
-                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
-                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
-                        return false;
-                    }
-
-                    if (checkWinNow(g.board, g.hasMoved, g.aiSide)) {
+                    if (checkWinNowAI(g.board, g.hasMoved, g.aiSide)) {
                         g.gameOver = true;
                         showResult('AI Wins! 😢', 'The AI defeated you.', '⭐ 1500', '');
                         renderAIBoard();
                         return;
                     }
-                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
-                            '') return false; return true; }(g.board)) {
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
                         showResult('Draw!', 'Board is full.', '⭐ 1500', '');
                         renderAIBoard();
@@ -1723,10 +1710,8 @@
             function setPlayerSide(side) {
                 gameAI.playerSide = side;
                 gameAI.aiSide = (side === 'X' ? 'O' : 'X');
-                document.getElementById('playerXAI').querySelector('h3').textContent = side === 'X' ? 'Player (X)' :
-                    'AI (X)';
-                document.getElementById('playerOAI').querySelector('h3').textContent = side === 'O' ? 'Player (O)' :
-                    'AI (O)';
+                document.getElementById('playerXAI').querySelector('h3').textContent = side === 'X' ? 'Player (X)' : 'AI (X)';
+                document.getElementById('playerOAI').querySelector('h3').textContent = side === 'O' ? 'Player (O)' : 'AI (O)';
                 gameAI.board = [
                     ['X', 'X', 'X'],
                     ['', '', ''],
@@ -1777,7 +1762,7 @@
             });
 
             // ============================================================
-            // 3. VS FRIEND (UNCHANGED)
+            // 3. VS FRIEND
             // ============================================================
 
             const boardFriend = document.getElementById('boardFriend');
@@ -1870,28 +1855,13 @@
                     g.positionCounts[key] = (g.positionCounts[key] || 0) + 1;
                     if (g.positionCounts[key] >= 5 && !g.drawClaimed && !g.gameOver) g.drawAvailable = true;
 
-                    function checkWinNow(b, m, p) {
-                        for (let r = 0; r < 3; r++) {
-                            if (b[r][0] === p && b[r][1] === p && b[r][2] === p && m[r][0] && m[r][1] && m[r][2])
-                            return true;
-                        }
-                        for (let c = 0; c < 3; c++) {
-                            if (b[0][c] === p && b[1][c] === p && b[2][c] === p && m[0][c] && m[1][c] && m[2][c])
-                            return true;
-                        }
-                        if (b[0][0] === p && b[1][1] === p && b[2][2] === p && m[0][0] && m[1][1] && m[2][2]) return true;
-                        if (b[0][2] === p && b[1][1] === p && b[2][0] === p && m[0][2] && m[1][1] && m[2][0]) return true;
-                        return false;
-                    }
-
-                    if (checkWinNow(g.board, g.hasMoved, player)) {
+                    if (checkWinNowAI(g.board, g.hasMoved, player)) {
                         g.gameOver = true;
                         showResult(`${player} Wins! 🎉`, `Player ${player} wins!`, '', '');
                         renderFriendBoard();
                         return;
                     }
-                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] ===
-                            '') return false; return true; }(g.board)) {
+                    if (function isFull(b) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === '') return false; return true; }(g.board)) {
                         g.gameOver = true;
                         showResult('Draw!', 'Board is full.', '', '');
                         renderFriendBoard();
@@ -1984,7 +1954,6 @@
             // 5. EVENT LISTENERS
             // ============================================================
 
-            // Tabs - vs AI is default
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1995,7 +1964,6 @@
                     if (btn.dataset.tab === 'online') {
                         onlineManager.renderBoard();
                         onlineManager.updateUI();
-                        // HIDE the choice overlay when on Online tab
                         document.getElementById('choiceOverlay').classList.add('hidden');
                     }
                     if (btn.dataset.tab === 'vsAI') {
@@ -2005,14 +1973,12 @@
                         renderAIBoard();
                     }
                     if (btn.dataset.tab === 'vsFriend') {
-                        // HIDE the choice overlay when on Friend tab
                         document.getElementById('choiceOverlay').classList.add('hidden');
                         renderFriendBoard();
                     }
                 });
             });
 
-            // Online
             document.getElementById('findOpponentBtn').addEventListener('click', () => {
                 onlineManager.findOpponent();
             });
@@ -2040,7 +2006,6 @@
                 }
             });
 
-            // Help
             document.getElementById('helpOnline').addEventListener('click', () => {
                 alert(
                     'Online Play:\n\n- Your 5-digit ID is saved to your browser\n- Click "Find Opponent" to join the matchmaking queue\n- Or enter an opponent\'s ID and click "Join"\n- X starts, O goes second\n- Win = +10 Elo, Lose = -10 Elo\n- Draw claim after 5 repetitions');
@@ -2054,12 +2019,13 @@
             renderAIBoard();
             renderFriendBoard();
 
-            // Show choice overlay for AI initially
             choiceOverlay.classList.remove('hidden');
 
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
-            console.log('Players registered:', Object.keys(getPlayerRegistry()).length);
+            getPlayerRegistry().then(registry => {
+                console.log('Players registered:', Object.keys(registry).length);
+            });
         });
     </script>
 </body>
