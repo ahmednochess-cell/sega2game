@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sega 2 – Online Multiplayer</title>
     
-    <!-- Firebase SDK -->
+    <!-- 🔥 FIREBASE SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
@@ -93,10 +93,6 @@
 
         .challenge-panel { margin: 0 20px 20px; padding: 15px; background: #f7f9ff; border: 1px solid #d8def0; border-radius: 12px; }
         .challenge-panel h3 { margin-bottom: 10px; color: #1a2a6c; }
-        .online-timer { margin: 8px auto 0; text-align: center; font-weight: 800; font-size: 1.15rem; padding: 8px 14px; border-radius: 10px; background: #eef2ff; color: #1a2a6c; max-width: 220px; }
-        .online-timer.warning { background: #fff3cd; color: #856404; }
-        .online-timer.danger { background: #f8d7da; color: #842029; }
-        .online-leave-note { text-align: center; font-size: 0.8rem; color: #777; margin-top: 6px; }
         .challenge-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; margin:8px 0; background:#fff; border-radius:9px; border:1px solid #e1e5ef; }
         .challenge-actions { display:flex; gap:7px; }
         .challenge-actions button { border:0; border-radius:7px; padding:7px 12px; cursor:pointer; font-weight:600; }
@@ -188,7 +184,8 @@
                 <div class="lobby-controls">
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
                     <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
-                    <button class="btn-join" id="joinOpponentBtn">Challenge</button>
+                    <button class="btn-join" id="joinOpponentBtn">Join</button>
+                    <button id="resetOnlineBtn">Leave Game</button>
                 </div>
             </div>
 
@@ -199,8 +196,6 @@
 
             <div class="game-info">
                 <div class="status" id="statusOnline">Waiting for opponent...</div>
-                <div class="online-timer" id="onlineMoveTimer">⏱️ Time per move: 1:00</div>
-                <div class="online-leave-note">Each player has 1 minute per move.</div>
                 <div class="controls">
                     <button id="helpOnline">How to Play</button>
                 </div>
@@ -228,12 +223,12 @@
                     <ul>
                         <li>Your unique <span class="highlight">5-digit ID</span> is saved to your browser</li>
                         <li>Click <span class="highlight">"Find Opponent"</span> to join the matchmaking queue</li>
-                        <li>Or enter an opponent's ID and click <span class="highlight">"Challenge"</span></li>
+                        <li>Or enter an opponent's ID and click <span class="highlight">"Join"</span></li>
                         <li>X always starts (top row)</li>
                         <li>Win = +10 Elo, Lose = -10 Elo, Draw = no change</li>
                         <li>All pieces in winning line must have moved</li>
                         <li><span class="highlight">No piece capturing</span></li>
-                        <li>Each move has a 1-minute limit; timeout = loss</li>
+                        <li>Draw claim: if same position repeats 5 times</li>
                     </ul>
                 </div>
             </div>
@@ -307,6 +302,7 @@
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+        console.log('🔥 Firebase connected!');
 
         document.addEventListener('DOMContentLoaded', () => {
 
@@ -326,7 +322,7 @@
             }
 
             // ============================================================
-            // 1. ONLINE SYSTEM - FIREBASE VERSION (No leave option)
+            // 1. ONLINE SYSTEM - FIREBASE VERSION
             // ============================================================
 
             const MY_ID_KEY = 'sega2_playerId';
@@ -407,16 +403,13 @@
                     if (!player.gamesPlayed) player.gamesPlayed = 0;
                     if (!player.wins) player.wins = 0;
                     if (!player.losses) player.losses = 0;
-                    if (player.draws == null) player.draws = 0;
-                    if (player.inGame == null) player.inGame = false;
-                    if (player.opponentId == null) player.opponentId = null;
-                    if (player.side == null) player.side = null;
-                    if (player.waitingForMatch == null) player.waitingForMatch = false;
+                    if (!player.draws) player.draws = 0;
+                    player.inGame = false;
+                    player.opponentId = null;
+                    player.side = null;
+                    player.waitingForMatch = false;
                     registry[savedId] = player;
-                    db.ref('players/' + savedId).update({
-                        id: savedId, elo: player.elo, gamesPlayed: player.gamesPlayed,
-                        wins: player.wins, losses: player.losses, draws: player.draws
-                    });
+                    savePlayerRegistry(registry);
                     return player;
                 }
 
@@ -441,14 +434,13 @@
 
             async function cleanQueue() {
                 const registry = await getPlayerRegistry();
-                const queue = await getQueue();
-                const cleaned = {};
-                Object.entries(queue).forEach(([id, entry]) => {
+                let queue = await getQueue();
+                queue = queue.filter(id => {
                     const p = registry[id];
-                    if (entry && p && !p.inGame && p.waitingForMatch) cleaned[id] = entry;
+                    return p && !p.inGame && p.waitingForMatch;
                 });
-                await saveQueue(cleaned);
-                return cleaned;
+                saveQueue(queue);
+                return queue;
             }
 
             // ---- Online Game ----
@@ -476,8 +468,12 @@
                     this.drawClaimed = false;
                     this.winner = null;
                     this.moveHistory = [];
+                    // Deterministic side assignment: both browsers calculate the same result.
                     this.p1Side = String(player1Id) < String(player2Id) ? 'X' : 'O';
                     this.p2Side = this.p1Side === 'X' ? 'O' : 'X';
+
+                    this.updatePlayers();
+                    this.saveToRegistry();
                 }
 
                 async updatePlayers() {
@@ -642,9 +638,7 @@
                 }
             }
 
-            // ---- Online Manager (no leave) ----
-            const MOVE_LIMIT_MS = 60 * 1000;
-
+            // ---- Online Manager ----
             const onlineManager = {
                 currentPlayer: null,
                 game: null,
@@ -653,107 +647,65 @@
                 inQueue: false,
                 matchFound: false,
                 gameListener: null,
+                syncInterval: null,
                 queuePollInterval: null,
                 challengeListener: null,
+                challengeStatusListeners: {},
                 currentMatchListener: null,
-                presenceRef: null,
-                presenceListener: null,
-                timerInterval: null,
-                serverTimeOffset: 0,
                 endingGame: false,
-                resultShown: false,
 
                 async init() {
                     this.currentPlayer = await getOrCreatePlayer();
-                    this.inQueue = !!this.currentPlayer.waitingForMatch;
+                    this.inQueue = false;
                     this.matchFound = false;
                     this.game = null;
-                    this.opponentId = this.currentPlayer.opponentId || null;
-                    this.mySide = this.currentPlayer.side || null;
-                    this.serverTimeOffset = 0;
+                    this.opponentId = null;
+                    this.mySide = null;
 
-                    db.ref('.info/serverTimeOffset').on('value', snap => {
-                        this.serverTimeOffset = Number(snap.val() || 0);
-                        this.updateTimer();
+                    // Do not erase an opponent/match before checking it.
+                    const playerSnap = await db.ref('players/' + this.currentPlayer.id).once('value');
+                    const remote = playerSnap.val() || {};
+                    this.currentPlayer = { ...this.currentPlayer, ...remote };
+                    await updatePlayer(this.currentPlayer.id, {
+                        id: this.currentPlayer.id,
+                        elo: this.currentPlayer.elo || 1500,
+                        gamesPlayed: this.currentPlayer.gamesPlayed || 0,
+                        wins: this.currentPlayer.wins || 0,
+                        losses: this.currentPlayer.losses || 0,
+                        draws: this.currentPlayer.draws || 0,
+                        online: true
                     });
 
-                    await updatePlayer(this.currentPlayer.id, { online: true });
+                    await this.cleanOwnQueueEntry();
                     this.listenForChallenges();
                     this.listenForCurrentMatch();
                     await this.checkForExistingGame();
                     this.startQueuePolling();
-                    this.startTimer();
-                    this.installPresenceHooks();
                     this.updateUI();
                     this.renderBoard();
+                    this.startSync();
                     return this.currentPlayer;
                 },
 
-                serverNow() {
-                    return Date.now() + (this.serverTimeOffset || 0);
-                },
-
-                formatTime(ms) {
-                    ms = Math.max(0, Math.ceil(ms / 1000));
-                    const m = Math.floor(ms / 60), sec = ms % 60;
-                    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-                },
-
-                startTimer() {
-                    if (this.timerInterval) clearInterval(this.timerInterval);
-                    this.timerInterval = setInterval(() => {
-                        this.updateTimer();
-                        this.checkTurnTimeout();
-                    }, 250);
-                },
-
-                updateTimer() {
-                    const el = document.getElementById('onlineMoveTimer');
-                    if (!el) return;
-                    const game = this.game;
-                    if (!game || game.gameOver || !game.turnStartedAt) {
-                        el.textContent = '⏱️ Time per move: 1:00';
-                        el.className = 'online-timer';
-                        return;
-                    }
-                    const remaining = MOVE_LIMIT_MS - (this.serverNow() - Number(game.turnStartedAt));
-                    el.textContent = `⏱️ ${this.formatTime(remaining)} ${game.currentPlayer === this.mySide ? '(Your move)' : '(Opponent)'}`;
-                    el.className = 'online-timer' + (remaining <= 10000 ? ' danger' : remaining <= 20000 ? ' warning' : '');
-                },
-
-                installPresenceHooks() {
-                    window.addEventListener('beforeunload', () => {
-                        if (this.presenceRef && this.game && !this.game.gameOver) {
-                            try { this.presenceRef.onDisconnect().remove(); } catch (_) {}
-                        }
-                    });
-                    document.addEventListener('visibilitychange', () => {
-                        if (!document.hidden) this.checkPresenceState();
-                    });
-                },
-
-                async checkPresenceState() {
-                    if (!this.currentPlayer || !this.matchFound || !this.opponentId) return;
-                    if (!this.presenceRef) return;
-                },
-
                 async cleanOwnQueueEntry() {
-                    await db.ref('queue/' + this.currentPlayer.id).remove();
+                    const snap = await db.ref('queue/' + this.currentPlayer.id).once('value');
+                    if (snap.exists()) await db.ref('queue/' + this.currentPlayer.id).remove();
                     await updatePlayer(this.currentPlayer.id, { waitingForMatch: false });
-                    this.inQueue = false;
                 },
 
                 listenForChallenges() {
                     if (this.challengeListener) this.challengeListener.off();
                     const ref = db.ref('challenges/' + this.currentPlayer.id);
                     this.challengeListener = ref;
-                    ref.on('value', snap => this.renderChallenges(snap.val() || {}));
+                    ref.on('value', snap => {
+                        this.renderChallenges(snap.val() || {});
+                    });
                 },
 
                 renderChallenges(challenges) {
                     const el = document.getElementById('challengeList');
                     if (!el) return;
-                    const pending = Object.entries(challenges).filter(([_, c]) => c && c.status === 'pending');
+                    const pending = Object.entries(challenges).filter(([id, c]) => c && c.status === 'pending');
                     if (!pending.length) {
                         el.innerHTML = '<div class="challenge-empty">No pending challenges.</div>';
                         return;
@@ -793,23 +745,21 @@
 
                 async respondToChallenge(challengeId, accept) {
                     const ref = db.ref('challenges/' + this.currentPlayer.id + '/' + challengeId);
+                    let challenge = null;
                     const snap = await ref.once('value');
-                    const challenge = snap.val();
+                    challenge = snap.val();
                     if (!challenge || challenge.status !== 'pending') return;
                     if (!accept) {
                         await ref.update({ status: 'declined', respondedAt: firebase.database.ServerValue.TIMESTAMP });
                         showToast('Challenge declined');
                         return;
                     }
+
                     const challengerId = challenge.fromId;
-                    const opponentSnap = await db.ref('players/' + challengerId).once('value');
-                    if (!opponentSnap.exists()) { showToast('Player is no longer available.'); return; }
                     const match = await this.createOrGetMatch(challengerId);
                     await ref.update({ status: 'accepted', matchId: match.id, respondedAt: firebase.database.ServerValue.TIMESTAMP });
-                    await db.ref('queue/' + this.currentPlayer.id).remove();
-                    await db.ref('queue/' + challengerId).remove();
-                    await updatePlayer(challengerId, { currentMatch: match.id, waitingForMatch: false });
-                    await updatePlayer(this.currentPlayer.id, { currentMatch: match.id, waitingForMatch: false });
+                    // Wake the challenger immediately; their browser will then join the same match.
+                    await updatePlayer(challengerId, { currentMatch: match.id });
                     await this.startMatch(challengerId, match);
                     showToast('Challenge accepted!');
                 },
@@ -824,10 +774,8 @@
                             id,
                             player1Id: ids[0],
                             player2Id: ids[1],
-                            status: 'waiting',
-                            ready: {},
-                            result: null,
-                            createdAt: Date.now()
+                            status: 'active',
+                            createdAt: firebase.database.ServerValue.TIMESTAMP
                         };
                     });
                     return result.snapshot.val();
@@ -841,87 +789,17 @@
                         if (!id || this.matchFound) return;
                         const matchSnap = await db.ref('matches/' + id).once('value');
                         const m = matchSnap.val();
-                        if (!m || m.result) return;
+                        if (!m) return;
                         const opp = m.player1Id === this.currentPlayer.id ? m.player2Id : m.player1Id;
                         await this.startMatch(opp, m);
                     });
                 },
 
-                async markReady(match) {
-                    const ref = db.ref('matches/' + match.id);
-                    await ref.child('ready/' + this.currentPlayer.id).set(true);
-                    let snap = await ref.once('value');
-                    let m = snap.val();
-                    if (m && m.ready && m.ready[m.player1Id] && m.ready[m.player2Id] && !m.startedAt) {
-                        await ref.update({ status: 'active', startedAt: this.serverNow() });
-                        snap = await ref.once('value');
-                        m = snap.val();
-                    }
-                    return m || match;
-                },
-
-                async attachPresence(match) {
-                    if (this.presenceListener) this.presenceListener.off();
-                    if (this.presenceRef) this.presenceRef.onDisconnect().cancel();
-                    const path = 'presence/' + match.id + '/' + this.currentPlayer.id;
-                    this.presenceRef = db.ref(path);
-                    await this.presenceRef.onDisconnect().remove();
-                    await this.presenceRef.set(true);
-                    const allPresenceRef = db.ref('presence/' + match.id);
-                    this.presenceListener = allPresenceRef;
-                    allPresenceRef.on('value', async snap => {
-                        const presence = snap.val() || {};
-                        if (!this.game || this.game.gameOver || !this.opponentId) return;
-                        const matchSnap = await db.ref('matches/' + match.id).once('value');
-                        const liveMatch = matchSnap.val() || {};
-                        if (!liveMatch.startedAt || liveMatch.status !== 'active' || liveMatch.result) return;
-                        if (presence[this.opponentId]) return;
-                        this.handlePlayerLeft(this.opponentId);
-                    });
-                },
-
-                async ensureGame(match) {
-                    const ref = db.ref('games/' + match.id);
-                    const now = this.serverNow();
-                    const result = await ref.transaction(current => {
-                        if (current) {
-                            const state = JSON.parse(JSON.stringify(current));
-                            if (match.status === 'active' && !state.turnStartedAt && !state.gameOver) {
-                                state.turnStartedAt = Number(match.startedAt || now);
-                                state.revision = Number(state.revision || 0) + 1;
-                            }
-                            return state;
-                        }
-                        return {
-                            board: [['X','X','X'],['','',''],['O','O','O']],
-                            hasMoved: [[false,false,false],[false,false,false],[false,false,false]],
-                            currentPlayer: 'X',
-                            gameOver: false,
-                            winner: null,
-                            positionHistory: [],
-                            positionCounts: {},
-                            drawAvailable: false,
-                            drawClaimed: false,
-                            p1Side: 'X',
-                            p2Side: 'O',
-                            moveHistory: [],
-                            turnStartedAt: match.status === 'active' ? Number(match.startedAt || now) : null,
-                            revision: 0
-                        };
-                    });
-                    return result.snapshot.val();
-                },
-
                 async claimMatchForPlayer(opponentId, match) {
-                    this.currentPlayer.inGame = true;
-                    this.currentPlayer.opponentId = opponentId;
-                    this.currentPlayer.side = this.currentPlayer.id === match.player1Id ? 'X' : 'O';
-                    this.currentPlayer.waitingForMatch = false;
-                    this.currentPlayer.currentMatch = match.id;
                     await updatePlayer(this.currentPlayer.id, {
                         inGame: true,
                         opponentId,
-                        side: this.currentPlayer.side,
+                        side: this.currentPlayer.id === match.player1Id ? 'X' : 'O',
                         waitingForMatch: false,
                         currentMatch: match.id
                     });
@@ -930,13 +808,16 @@
                 async startQueuePolling() {
                     if (this.queuePollInterval) clearInterval(this.queuePollInterval);
                     this.queuePollInterval = setInterval(async () => {
-                        if (!this.currentPlayer || this.matchFound || this.currentPlayer.inGame || !this.inQueue) return;
+                        if (!this.currentPlayer || this.matchFound || this.currentPlayer.inGame) return;
+                        if (!this.inQueue) return;
                         const snap = await db.ref('queue').once('value');
                         const q = snap.val() || {};
                         const candidates = Object.values(q)
                             .filter(x => x && x.id && x.id !== this.currentPlayer.id)
                             .sort((a,b) => (a.createdAt || 0) - (b.createdAt || 0));
                         if (!candidates.length) { this.updateUI(); return; }
+
+                        // Deterministic pairing: everyone agrees on the same earliest opponent.
                         const opponent = candidates[0];
                         const match = await this.createOrGetMatch(opponent.id);
                         await db.ref('queue/' + this.currentPlayer.id).remove();
@@ -944,7 +825,7 @@
                         await updatePlayer(this.currentPlayer.id, { waitingForMatch: false, currentMatch: match.id });
                         await updatePlayer(opponent.id, { waitingForMatch: false, currentMatch: match.id });
                         await this.startMatch(opponent.id, match);
-                    }, 800);
+                    }, 1000);
                 },
 
                 async findOpponent() {
@@ -964,10 +845,9 @@
                         await this.startMatch(opponent.id, match);
                         return;
                     }
-                    await queueRef.set({ id: this.currentPlayer.id, elo: this.currentPlayer.elo || 1500, createdAt: this.serverNow() });
+                    await queueRef.set({ id: this.currentPlayer.id, elo: this.currentPlayer.elo || 1500, createdAt: firebase.database.ServerValue.TIMESTAMP });
                     await updatePlayer(this.currentPlayer.id, { waitingForMatch: true, currentMatch: null });
                     this.inQueue = true;
-                    this.currentPlayer.waitingForMatch = true;
                     showToast('Searching for a real player...');
                     this.updateUI();
                 },
@@ -976,7 +856,6 @@
                     await db.ref('queue/' + this.currentPlayer.id).remove();
                     await updatePlayer(this.currentPlayer.id, { waitingForMatch: false });
                     this.inQueue = false;
-                    this.currentPlayer.waitingForMatch = false;
                     showToast('Left matchmaking queue');
                     this.updateUI();
                 },
@@ -992,365 +871,116 @@
                     if (this.matchFound && this.opponentId === opponentId) return;
                     if (!match) match = await this.createOrGetMatch(opponentId);
                     if (!match) return;
+
                     this.inQueue = false;
                     this.opponentId = opponentId;
                     this.matchFound = true;
-                    this.resultShown = false;
                     this.mySide = this.currentPlayer.id === match.player1Id ? 'X' : 'O';
                     await this.claimMatchForPlayer(opponentId, match);
-                    match = await this.markReady(match);
-                    const data = await this.ensureGame(match);
-                    this.game = new OnlineGame(this.currentPlayer.id, opponentId);
-                    Object.assign(this.game, data || {});
-                    if (this.game.p1Side == null) this.game.p1Side = match.player1Id < match.player2Id ? 'X' : 'O';
-                    if (this.game.p2Side == null) this.game.p2Side = this.game.p1Side === 'X' ? 'O' : 'X';
-                    await this.attachPresence(match);
+
+                    const data = await loadGame(this.currentPlayer.id, opponentId);
+                    if (data) {
+                        this.game = new OnlineGame(this.currentPlayer.id, opponentId);
+                        Object.assign(this.game, data);
+                    } else {
+                        this.game = new OnlineGame(this.currentPlayer.id, opponentId);
+                        await this.game.saveToRegistry();
+                    }
+
                     if (this.gameListener) this.gameListener.off();
                     this.gameListener = subscribeGame(this.currentPlayer.id, opponentId, data => {
                         if (data) this.syncGameData(data);
                     });
                     this.updateUI();
                     this.renderBoard();
-                    this.updateTimer();
                     showToast('Match found! You are ' + this.mySide);
                 },
 
                 async checkForExistingGame() {
                     const snap = await db.ref('players/' + this.currentPlayer.id).once('value');
                     const me = snap.val() || {};
-                    if (!me.currentMatch || !me.opponentId) {
-                        if (me.inGame) {
-                            await updatePlayer(this.currentPlayer.id, { inGame: false, opponentId: null, side: null, currentMatch: null });
-                        }
-                        return;
-                    }
+                    if (!me.currentMatch || !me.opponentId) return;
                     const matchSnap = await db.ref('matches/' + me.currentMatch).once('value');
                     const m = matchSnap.val();
-                    if (!m || m.result) {
-                        await updatePlayer(this.currentPlayer.id, { inGame: false, opponentId: null, side: null, currentMatch: null });
-                        return;
-                    }
+                    if (!m) return;
                     await this.startMatch(me.opponentId, m);
+                },
+
+                startSync() {
+                    if (this.syncInterval) clearInterval(this.syncInterval);
+                    // Do NOT periodically write the local board. A stale browser could overwrite
+                    // the other player's latest move. Moves are written only by handleClick().
+                    this.syncInterval = null;
+                },
+
+                syncGameState() {
+                    // Kept for compatibility with older code. Real-time Firebase listeners
+                    // deliver the authoritative game state; moves call saveToRegistry() directly.
                 },
 
                 syncGameData(data) {
                     if (!data || !this.game) return;
-                    const incomingRevision = Number(data.revision || 0);
-                    const localRevision = Number(this.game.revision || 0);
-                    if (incomingRevision < localRevision) return;
-                    this.game.board = data.board || this.game.board;
-                    this.game.hasMoved = data.hasMoved || this.game.hasMoved;
-                    this.game.currentPlayer = data.currentPlayer || this.game.currentPlayer;
-                    this.game.gameOver = !!data.gameOver;
-                    this.game.winner = data.winner || null;
+                    if ((data.moveHistory || []).length < (this.game.moveHistory || []).length) return;
+                    if ((data.moveHistory || []).length === (this.game.moveHistory || []).length && data.currentPlayer === this.game.currentPlayer) return;
+                    this.game.board = data.board;
+                    this.game.hasMoved = data.hasMoved;
+                    this.game.currentPlayer = data.currentPlayer;
+                    this.game.gameOver = data.gameOver;
+                    this.game.winner = data.winner;
                     this.game.positionHistory = data.positionHistory || [];
                     this.game.positionCounts = data.positionCounts || {};
-                    this.game.drawAvailable = !!data.drawAvailable;
-                    this.game.drawClaimed = !!data.drawClaimed;
+                    this.game.drawAvailable = data.drawAvailable || false;
+                    this.game.drawClaimed = data.drawClaimed || false;
                     this.game.moveHistory = data.moveHistory || [];
-                    this.game.turnStartedAt = Number(data.turnStartedAt || this.game.turnStartedAt || this.serverNow());
-                    this.game.revision = incomingRevision;
                     this.renderBoard();
-                    this.updateTimer();
                     if (this.game.gameOver) this.handleGameEnd();
                     else this.updateUI();
                 },
 
-                async makeMove(fromRow, fromCol, toRow, toCol) {
+                async handleGameEnd() {
                     const game = this.game;
-                    if (!game || game.gameOver || game.currentPlayer !== this.mySide) return;
-                    const ref = db.ref('games/' + matchId(this.currentPlayer.id, this.opponentId));
-                    const myId = this.currentPlayer.id;
-                    const mySide = this.mySide;
-                    const now = this.serverNow();
-                    let timeoutDetected = false;
-                    const result = await ref.transaction(state => {
-                        if (!state || state.gameOver) return;
-                        state = JSON.parse(JSON.stringify(state));
-                        const turnStarted = Number(state.turnStartedAt || now);
-                        if (now - turnStarted >= MOVE_LIMIT_MS) {
-                            const loser = state.currentPlayer === 'X' ? 'X' : 'O';
-                            const winner = loser === 'X' ? 'O' : 'X';
-                            state.gameOver = true;
-                            state.winner = winner;
-                            state.endReason = 'timeout';
-                            state.loserId = winner === mySide ? this.opponentId : myId;
-                            state.winnerId = winner === mySide ? myId : this.opponentId;
-                            state.endedAt = now;
-                            state.revision = Number(state.revision || 0) + 1;
-                            timeoutDetected = true;
-                            return state;
-                        }
-                        if (state.currentPlayer !== mySide) return;
-                        if (!state.board || !state.board[fromRow] || state.board[fromRow][fromCol] !== mySide) return;
-                        if (!state.board[toRow] || state.board[toRow][toCol] !== '') return;
-                        state.board[toRow][toCol] = mySide;
-                        state.board[fromRow][fromCol] = '';
-                        state.hasMoved[toRow][toCol] = true;
-                        state.moveHistory = state.moveHistory || [];
-                        state.moveHistory.push({ from:{row:fromRow,col:fromCol}, to:{row:toRow,col:toCol}, player:mySide, at:now });
-                        let positionKey = '';
-                        for (let rr = 0; rr < 3; rr++) {
-                            for (let cc = 0; cc < 3; cc++) {
-                                positionKey += state.board[rr][cc] || '-';
-                                positionKey += state.hasMoved[rr][cc] ? '1' : '0';
-                            }
-                        }
-                        positionKey += state.currentPlayer;
-                        state.positionHistory = state.positionHistory || [];
-                        state.positionCounts = state.positionCounts || {};
-                        state.positionHistory.push(positionKey);
-                        state.positionCounts[positionKey] = Number(state.positionCounts[positionKey] || 0) + 1;
-                        if (state.positionCounts[positionKey] >= 5) state.drawAvailable = true;
-                        const b = state.board, m = state.hasMoved;
-                        const lines = [
-                            [[0,0],[0,1],[0,2]], [[1,0],[1,1],[1,2]], [[2,0],[2,1],[2,2]],
-                            [[0,0],[1,0],[2,0]], [[0,1],[1,1],[2,1]], [[0,2],[1,2],[2,2]],
-                            [[0,0],[1,1],[2,2]], [[0,2],[1,1],[2,0]]
-                        ];
-                        const won = lines.some(line => line.every(([r,c]) => b[r][c] === mySide && m[r][c]));
-                        const full = b.every(row => row.every(cell => cell !== ''));
-                        if (won) {
-                            state.gameOver = true;
-                            state.winner = mySide;
-                            state.endReason = 'win';
-                            state.winnerId = myId;
-                            state.loserId = this.opponentId;
-                            state.endedAt = now;
-                        } else if (full) {
-                            state.gameOver = true;
-                            state.winner = 'draw';
-                            state.endReason = 'draw';
-                            state.endedAt = now;
-                        } else {
-                            state.currentPlayer = mySide === 'X' ? 'O' : 'X';
-                            state.turnStartedAt = now;
-                        }
-                        state.revision = Number(state.revision || 0) + 1;
-                        return state;
-                    });
-                    if (!result.committed) return;
-                    const committed = result.snapshot.val();
-                    this.syncGameData(committed);
-                    if (timeoutDetected || committed.gameOver) await this.handleGameEnd();
-                },
-
-                async handleClick(row, col) {
-                    const game = this.game;
-                    if (!game || game.gameOver || game.currentPlayer !== this.mySide) return;
-                    if (game.selectedCell === null) {
-                        if (game.board[row][col] === this.mySide) {
-                            game.selectedCell = {row, col};
-                            game.validMoves = game.getValidMoves(row, col);
-                            this.renderBoard();
-                        }
-                        return;
-                    }
-                    const valid = game.validMoves.some(m => m.row === row && m.col === col);
-                    if (valid) {
-                        const from = game.selectedCell;
-                        game.selectedCell = null;
-                        game.validMoves = [];
-                        this.renderBoard();
-                        await this.makeMove(from.row, from.col, row, col);
-                    } else if (game.board[row][col] === this.mySide) {
-                        game.selectedCell = {row, col};
-                        game.validMoves = game.getValidMoves(row, col);
-                        this.renderBoard();
-                    } else {
-                        game.selectedCell = null;
-                        game.validMoves = [];
-                        this.renderBoard();
-                    }
-                },
-
-                async claimDraw() {
-                    const ref = db.ref('games/' + matchId(this.currentPlayer.id, this.opponentId));
-                    const now = this.serverNow();
-                    const result = await ref.transaction(state => {
-                        if (!state || state.gameOver) return;
-                        state = JSON.parse(JSON.stringify(state));
-                        state.gameOver = true;
-                        state.drawClaimed = true;
-                        state.drawAvailable = true;
-                        state.winner = 'draw';
-                        state.endReason = 'draw';
-                        state.endedAt = now;
-                        state.revision = Number(state.revision || 0) + 1;
-                        return state;
-                    });
-                    if (result.committed && result.snapshot.val()) {
-                        this.syncGameData(result.snapshot.val());
-                        await this.handleGameEnd();
-                    }
-                },
-
-                async checkTurnTimeout() {
-                    const game = this.game;
-                    if (!game || game.gameOver || !game.turnStartedAt) return;
-                    if (this.serverNow() - Number(game.turnStartedAt) < MOVE_LIMIT_MS) return;
-                    const ref = db.ref('games/' + matchId(this.currentPlayer.id, this.opponentId));
-                    const now = this.serverNow();
-                    const result = await ref.transaction(state => {
-                        if (!state || state.gameOver) return;
-                        state = JSON.parse(JSON.stringify(state));
-                        if (now - Number(state.turnStartedAt || now) < MOVE_LIMIT_MS) return;
-                        const loserSide = state.currentPlayer;
-                        const winnerSide = loserSide === 'X' ? 'O' : 'X';
-                        state.gameOver = true;
-                        state.winner = winnerSide;
-                        state.endReason = 'timeout';
-                        state.winnerId = winnerSide === (this.mySide) ? this.currentPlayer.id : this.opponentId;
-                        state.loserId = loserSide === (this.mySide) ? this.currentPlayer.id : this.opponentId;
-                        state.endedAt = now;
-                        state.revision = Number(state.revision || 0) + 1;
-                        return state;
-                    });
-                    if (result.committed && result.snapshot.val()) {
-                        this.syncGameData(result.snapshot.val());
-                        await this.handleGameEnd();
-                    }
-                },
-
-                async handlePlayerLeft(leaverId) {
-                    if (!this.game || this.game.gameOver || !this.matchFound) return;
-                    const ref = db.ref('matches/' + matchId(this.currentPlayer.id, this.opponentId));
-                    const now = this.serverNow();
-                    const result = await ref.transaction(match => {
-                        if (!match || match.result) return match;
-                        match = JSON.parse(JSON.stringify(match));
-                        match.status = 'completed';
-                        match.result = 'win_by_leave';
-                        match.winnerId = this.currentPlayer.id;
-                        match.loserId = leaverId;
-                        match.endReason = 'left';
-                        match.endedAt = now;
-                        return match;
-                    });
-                    const matchData = result.snapshot.val();
-                    if (!matchData) return;
-                    const gameRef = db.ref('games/' + matchData.id);
-                    await gameRef.transaction(state => {
-                        if (!state) return state;
-                        if (state.gameOver) return state;
-                        state = JSON.parse(JSON.stringify(state));
-                        state.gameOver = true;
-                        state.winner = this.mySide;
-                        state.winnerId = this.currentPlayer.id;
-                        state.loserId = leaverId;
-                        state.endReason = 'left';
-                        state.endedAt = now;
-                        state.revision = Number(state.revision || 0) + 1;
-                        return state;
-                    });
-                    await this.handleGameEnd(true);
-                },
-
-                async settleMatchOnce(matchData) {
-                    const matchKey = matchId(this.currentPlayer.id, this.opponentId);
-                    const settlementRef = db.ref('matches/' + matchKey + '/settlement');
-                    const claim = await settlementRef.transaction(current => {
-                        if (current) return current;
-                        return { status: 'processing', claimedBy: this.currentPlayer.id, claimedAt: this.serverNow() };
-                    });
-                    const settlement = claim.snapshot.val();
-                    if (!claim.committed || !settlement || settlement.claimedBy !== this.currentPlayer.id || settlement.status !== 'processing') return false;
-                    if (settlement.completedAt) return true;
-
-                    const playersSnap = await db.ref('players').once('value');
-                    const players = playersSnap.val() || {};
-                    const me = players[this.currentPlayer.id], opp = players[this.opponentId];
-                    if (!me || !opp) return false;
-
-                    const winnerId = matchData.winnerId || (this.game && this.game.winnerId);
-                    const loserId = matchData.loserId || (this.game && this.game.loserId);
-                    const draw = matchData.winner === 'draw' || matchData.result === 'draw' || (this.game && this.game.winner === 'draw');
+                    if (!game || !game.gameOver || this.endingGame) return;
+                    this.endingGame = true;
+                    const myId = this.currentPlayer.id, oppId = this.opponentId;
+                    const reg = await getPlayerRegistry();
+                    const me = reg[myId], opp = reg[oppId];
+                    if (!me || !opp) { this.endingGame = false; return; }
+                    let result = game.winner === 'draw' ? 'draw' : (game.winner === this.mySide ? 'win' : 'loss');
                     const K = 32;
                     let change = 0;
-                    if (!draw && winnerId && loserId) {
-                        const winner = players[winnerId], loser = players[loserId];
-                        if (winner && loser) {
-                            const expected = 1 / (1 + Math.pow(10, (loser.elo - winner.elo) / 400));
-                            change = Math.round(K * (1 - expected));
-                            winner.elo = Number(winner.elo || 1500) + change;
-                            loser.elo = Number(loser.elo || 1500) - change;
-                            winner.wins = Number(winner.wins || 0) + 1;
-                            loser.losses = Number(loser.losses || 0) + 1;
-                            players[winnerId] = winner;
-                            players[loserId] = loser;
-                        }
-                    } else {
-                        me.draws = Number(me.draws || 0) + 1;
-                        opp.draws = Number(opp.draws || 0) + 1;
-                    }
-                    me.gamesPlayed = Number(me.gamesPlayed || 0) + 1;
-                    opp.gamesPlayed = Number(opp.gamesPlayed || 0) + 1;
-                    me.inGame = false; me.opponentId = null; me.side = null; me.currentMatch = null; me.waitingForMatch = false;
-                    opp.inGame = false; opp.opponentId = null; opp.side = null; opp.currentMatch = null; opp.waitingForMatch = false;
-                    const updates = {};
-                    updates['players/' + this.currentPlayer.id] = me;
-                    updates['players/' + this.opponentId] = opp;
-                    await db.ref().update(updates);
-                    await settlementRef.update({ status: 'done', completedAt: this.serverNow(), winnerId: winnerId || null, loserId: loserId || null, draw: !!draw });
-                    this.currentPlayer = { ...this.currentPlayer, ...me };
-                    return true;
+                    if (result === 'win') {
+                        const expected = 1 / (1 + Math.pow(10, (opp.elo - me.elo) / 400));
+                        change = Math.round(K * (1 - expected)); me.elo += change; opp.elo -= change; me.wins++; opp.losses++;
+                    } else if (result === 'loss') {
+                        const expected = 1 / (1 + Math.pow(10, (me.elo - opp.elo) / 400));
+                        change = Math.round(K * (1 - expected)); me.elo -= change; opp.elo += change; me.losses++; opp.wins++;
+                    } else { me.draws++; opp.draws++; }
+                    me.gamesPlayed++; opp.gamesPlayed++;
+                    me.inGame = false; me.opponentId = null; me.side = null; me.currentMatch = null;
+                    opp.inGame = false; opp.opponentId = null; opp.side = null; opp.currentMatch = null;
+                    await updatePlayer(myId, me);
+                    await updatePlayer(oppId, opp);
+                    await deleteGame(myId, oppId);
+                    await db.ref('matches/' + matchId(myId, oppId)).remove();
+                    const title = result === 'win' ? 'You Win! 🎉' : result === 'loss' ? 'You Lose 😢' : 'Draw! 🤝';
+                    showResult(title, 'Game over!', `⭐ ${me.elo}`, result === 'draw' ? 'No Elo change' : `${result === 'win' ? '+' : '-'}${change} Elo`);
+                    this.matchFound = false; this.game = null; this.opponentId = null; this.mySide = null; this.endingGame = false;
+                    this.updateUI(); this.renderBoard();
                 },
 
-                async handleGameEnd(fromLeave = false) {
-                    const game = this.game;
-                    if (!game || (!game.gameOver && !fromLeave) || !this.opponentId) return;
-                    const matchKey = matchId(this.currentPlayer.id, this.opponentId);
-                    const matchSnap = await db.ref('matches/' + matchKey).once('value');
-                    const matchData = matchSnap.val() || {};
-                    let winnerId = matchData.winnerId || game.winnerId;
-                    let loserId = matchData.loserId || game.loserId;
-                    if (!winnerId && game.winner && game.winner !== 'draw') {
-                        winnerId = game.winner === this.mySide ? this.currentPlayer.id : this.opponentId;
-                        loserId = winnerId === this.currentPlayer.id ? this.opponentId : this.currentPlayer.id;
+                async leaveGame() {
+                    if (this.inQueue) await this.leaveQueue();
+                    if (this.game && !this.game.gameOver) {
+                        this.game.gameOver = true;
+                        this.game.winner = this.game.getSide(this.opponentId);
+                        await this.handleGameEnd();
+                        return;
                     }
-                    if (winnerId || game.winner === 'draw') {
-                        matchData.winnerId = winnerId;
-                        matchData.loserId = loserId;
-                        matchData.result = game.winner === 'draw' ? 'draw' : 'finished';
-                        matchData.status = 'completed';
-                        matchData.endReason = game.endReason || (game.winner === 'draw' ? 'draw' : 'win');
-                        matchData.endedAt = matchData.endedAt || this.serverNow();
-                        await db.ref('matches/' + matchKey).transaction(current => {
-                            if (current && current.result) return current;
-                            return { ...current, ...matchData };
-                        });
-                    }
-                    await this.settleMatchOnce(matchData);
-
-                    const myResult = game.winner === 'draw' ? 'draw' : (winnerId === this.currentPlayer.id ? 'win' : 'loss');
-                    if (!this.resultShown) {
-                        this.resultShown = true;
-                        const latest = await db.ref('players/' + this.currentPlayer.id).once('value');
-                        const me = latest.val() || this.currentPlayer;
-                        const reason = game.endReason === 'timeout' ? 'Time expired' : game.endReason === 'left' ? 'Opponent left the game' : 'Game over';
-                        const changeText = game.winner === 'draw' ? 'No Elo change' : `${myResult === 'win' ? '+' : '-'} Elo`;
-                        showResult(myResult === 'win' ? 'You Win! 🎉' : myResult === 'loss' ? 'You Lose 😢' : 'Draw! 🤝', reason, `⭐ ${me.elo || 1500}`, changeText);
-                    }
-                    await this.cleanupLocalMatch();
-                },
-
-                async cleanupLocalMatch() {
-                    if (this.presenceListener) { this.presenceListener.off(); this.presenceListener = null; }
-                    if (this.presenceRef) { try { await this.presenceRef.onDisconnect().cancel(); } catch (_) {} this.presenceRef = null; }
-                    if (this.gameListener) { this.gameListener.off(); this.gameListener = null; }
-                    this.currentPlayer.inGame = false;
-                    this.currentPlayer.opponentId = null;
-                    this.currentPlayer.side = null;
-                    this.currentPlayer.currentMatch = null;
-                    this.currentPlayer.waitingForMatch = false;
-                    this.matchFound = false;
-                    this.inQueue = false;
-                    this.game = null;
-                    this.opponentId = null;
-                    this.mySide = null;
-                    this.updateUI();
-                    this.renderBoard();
-                    this.updateTimer();
+                    if (this.game) await deleteGame(this.currentPlayer.id, this.opponentId);
+                    await updatePlayer(this.currentPlayer.id, { inGame:false, opponentId:null, side:null, currentMatch:null, waitingForMatch:false });
+                    this.matchFound = false; this.game = null; this.opponentId = null; this.mySide = null;
+                    this.updateUI(); this.renderBoard();
+                    showToast('Left game');
                 },
 
                 updateUI() {
@@ -1363,7 +993,7 @@
                     if (this.inQueue) {
                         status.textContent = '⏳ In Queue...'; status.className = 'online-status waiting';
                         queueStatus.textContent = '🔍 Searching for another human player...';
-                        findBtn.textContent = '⏹ Cancel'; findBtn.disabled = false;
+                        findBtn.textContent = '⏹ Cancel';
                     } else if (this.matchFound || this.currentPlayer.inGame) {
                         status.textContent = '● In Game'; status.className = 'online-status ingame';
                         queueStatus.textContent = this.game && !this.game.gameOver ? `Playing as ${this.mySide}` : 'Game ended';
@@ -1381,10 +1011,7 @@
                     const claimBtn = document.getElementById('claimDrawOnline');
                     if (!game) {
                         boardEl.innerHTML = '<div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Find an opponent or accept a challenge.</div>';
-                        statusEl.textContent = 'Waiting for opponent...';
-                        claimBtn.classList.remove('visible');
-                        this.updateTimer();
-                        return;
+                        statusEl.textContent = 'Waiting for opponent...'; claimBtn.classList.remove('visible'); return;
                     }
                     boardEl.innerHTML = '';
                     for (let r=0;r<3;r++) for (let c=0;c<3;c++) {
@@ -1398,11 +1025,27 @@
                     if(game.gameOver) statusEl.textContent='Game Over';
                     else if(game.currentPlayer===this.mySide) statusEl.textContent=`Your turn (${this.mySide})`;
                     else statusEl.textContent=`Opponent's turn... (${game.currentPlayer})`;
-                    claimBtn.classList.toggle('visible', !!(game.drawAvailable && !game.drawClaimed && !game.gameOver));
+                    claimBtn.classList.toggle('visible', !!(game.drawAvailable&&!game.drawClaimed&&!game.gameOver));
                     const p1=document.getElementById('playerXOnline'), p2=document.getElementById('playerOOnline');
                     p1.querySelector('h3').textContent=this.mySide==='X'?'You (X)':'Opponent (X)';
                     p2.querySelector('h3').textContent=this.mySide==='O'?'You (O)':'Opponent (O)';
-                    this.updateTimer();
+                },
+
+                handleClick(row,col) {
+                    const game=this.game; if(!game||game.gameOver||game.currentPlayer!==this.mySide)return;
+                    if(game.selectedCell===null){
+                        if(game.board[row][col]===this.mySide){game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();} return;
+                    }
+                    const valid=game.validMoves.some(m=>m.row===row&&m.col===col);
+                    if(valid){
+                        const from=game.selectedCell;
+                        if(game.makeMove(from.row,from.col,row,col)){
+                            game.selectedCell=null;game.validMoves=[];game.saveToRegistry();this.renderBoard();
+                            if(game.gameOver)this.handleGameEnd();
+                        }
+                    } else if(game.board[row][col]===this.mySide){
+                        game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();
+                    } else {game.selectedCell=null;game.validMoves=[];this.renderBoard();}
                 }
             };
 
@@ -1667,16 +1310,22 @@
                 return false;
             }
 
+            // 🔥 NEW: Evaluate a move and return its score with win/loss/draw info
             function evaluateMove(board, hasMoved, fromRow, fromCol, toRow, toCol, aiSide, playerSide) {
+                // Make the move
                 const orig = board[toRow][toCol];
                 const origMoved = hasMoved[toRow][toCol];
                 board[toRow][toCol] = aiSide;
                 board[fromRow][fromCol] = '';
                 hasMoved[toRow][toCol] = true;
 
+                // Check immediate win
                 const isWin = checkWinNowAI(board, hasMoved, aiSide);
+                
+                // Use minimax to evaluate the position
                 const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
                 
+                // Undo the move
                 board[fromRow][fromCol] = aiSide;
                 board[toRow][toCol] = orig;
                 hasMoved[toRow][toCol] = origMoved;
@@ -1684,10 +1333,12 @@
                 return { score, isWin };
             }
 
+            // 🔥 NEW: Find non-losing moves for the opening
             function findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide) {
                 const moves = [];
                 const results = [];
                 
+                // Get all possible first moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1702,6 +1353,7 @@
                     }
                 }
 
+                // Evaluate each move
                 for (const move of moves) {
                     const { from, to } = move;
                     const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
@@ -1712,30 +1364,38 @@
                     });
                 }
 
+                // Find the best score (maximizing for AI)
                 let bestScore = -Infinity;
                 for (const r of results) {
                     if (r.score > bestScore) bestScore = r.score;
                 }
 
+                // A move is non-losing if it doesn't lead to a loss (score >= 0)
+                // or if it's the best available
                 const nonLosingMoves = results.filter(r => r.score >= 0);
                 
+                // If no non-losing moves, return the best move
                 if (nonLosingMoves.length === 0) {
                     const bestResults = results.filter(r => r.score === bestScore);
                     return bestResults.map(r => r.move);
                 }
 
+                // If there are winning moves, return only those
                 const winningMoves = results.filter(r => r.isWin);
                 if (winningMoves.length > 0) {
                     return winningMoves.map(r => r.move);
                 }
 
+                // Otherwise return all non-losing moves
                 return nonLosingMoves.map(r => r.move);
             }
 
+            // 🔥 NEW: Find the best move with win percentage tie-breaking
             function findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide) {
                 const moves = [];
                 const results = [];
                 
+                // Get all possible moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1750,6 +1410,7 @@
                     }
                 }
 
+                // Evaluate each move
                 for (const move of moves) {
                     const { from, to } = move;
                     const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
@@ -1760,23 +1421,30 @@
                     });
                 }
 
+                // Check if there's a winning move
                 const winningMoves = results.filter(r => r.isWin);
                 if (winningMoves.length > 0) {
+                    // Return a random winning move
                     return winningMoves[Math.floor(Math.random() * winningMoves.length)].move;
                 }
 
+                // Find the best score
                 let bestScore = -Infinity;
                 for (const r of results) {
                     if (r.score > bestScore) bestScore = r.score;
                 }
 
+                // Get all moves with the best score
                 const bestMoves = results.filter(r => r.score === bestScore);
 
+                // If there's only one best move, return it
                 if (bestMoves.length === 1) {
                     return bestMoves[0].move;
                 }
 
+                // If the best score is a draw (0) or better, choose the one with highest win potential
                 if (bestScore >= 0) {
+                    // Calculate win potential for each best move
                     let maxPotential = -Infinity;
                     let bestPotentialMove = bestMoves[0];
                     
@@ -1797,17 +1465,25 @@
                     return bestPotentialMove;
                 }
 
+                // If all moves lose, return the one with the highest score (least bad)
                 return bestMoves[0].move;
             }
 
             function findBestMoveAI(board, hasMoved, aiSide, playerSide, isOpening) {
+                // 🔥 For the opening move (move 1), randomly choose between non-losing moves
                 if (isOpening) {
                     const nonLosingMoves = findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide);
                     if (nonLosingMoves.length > 0) {
                         const randomIndex = Math.floor(Math.random() * nonLosingMoves.length);
-                        return nonLosingMoves[randomIndex];
+                        const selected = nonLosingMoves[randomIndex];
+                        console.log(`🎲 Opening move: Randomly selected from ${nonLosingMoves.length} non-losing moves`);
+                        return selected;
                     }
+                    // Fallback: if no non-losing moves found, use the best move
+                    console.log('⚠️ No non-losing moves found, using best move');
                 }
+
+                // 🔥 For all other moves, use the best move with win percentage tie-breaking
                 return findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide);
             }
 
@@ -1915,6 +1591,8 @@
                 if (g.gameOver || g.currentPlayer !== g.aiSide) return;
                 
                 const isOpening = g.totalMoves === 0;
+                console.log(`AI move #${g.totalMoves}, isOpening: ${isOpening}`);
+                
                 const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide, isOpening);
                 
                 if (move) {
@@ -2216,10 +1894,7 @@
                 gameOverlay.classList.remove('active');
                 const activeTab = document.querySelector('.tab-btn.active');
                 if (activeTab.dataset.tab === 'online') {
-                    // No leave; just reset UI state and re-init
-                    onlineManager.cleanupLocalMatch();
-                    onlineManager.updateUI();
-                    onlineManager.renderBoard();
+                    onlineManager.leaveGame();
                 } else if (activeTab.dataset.tab === 'vsAI') {
                     resetAI();
                     choiceOverlay.classList.remove('hidden');
@@ -2266,8 +1941,22 @@
                 onlineManager.joinOpponent(id);
             });
 
+            document.getElementById('resetOnlineBtn').addEventListener('click', () => {
+                if (onlineManager.game && !onlineManager.game.gameOver) {
+                    if (confirm('Are you sure you want to leave the game? This will count as a loss.')) {
+                        onlineManager.leaveGame();
+                    }
+                } else {
+                    onlineManager.leaveGame();
+                }
+            });
+
             claimDrawOnline.addEventListener('click', () => {
-                onlineManager.claimDraw();
+                if (onlineManager.game && onlineManager.game.claimDraw()) {
+                    onlineManager.game.saveToRegistry();
+                    onlineManager.renderBoard();
+                    onlineManager.handleGameEnd();
+                }
             });
 
             document.getElementById('helpOnline').addEventListener('click', () => {
@@ -2287,6 +1976,9 @@
 
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
+            getPlayerRegistry().then(registry => {
+                console.log('Players registered:', Object.keys(registry).length);
+            });
         });
     </script>
 </body>
