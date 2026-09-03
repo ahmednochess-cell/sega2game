@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sega 2 – Online Multiplayer</title>
     
-    <!-- 🔥 FIREBASE SDK -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
@@ -188,8 +188,7 @@
                 <div class="lobby-controls">
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
                     <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
-                    <button class="btn-join" id="joinOpponentBtn">Join</button>
-                    <button id="resetOnlineBtn">Leave Game</button>
+                    <button class="btn-join" id="joinOpponentBtn">Challenge</button>
                 </div>
             </div>
 
@@ -201,7 +200,7 @@
             <div class="game-info">
                 <div class="status" id="statusOnline">Waiting for opponent...</div>
                 <div class="online-timer" id="onlineMoveTimer">⏱️ Time per move: 1:00</div>
-                <div class="online-leave-note">Leaving the game counts as a loss. You have 1 minute per move.</div>
+                <div class="online-leave-note">Each player has 1 minute per move.</div>
                 <div class="controls">
                     <button id="helpOnline">How to Play</button>
                 </div>
@@ -229,13 +228,12 @@
                     <ul>
                         <li>Your unique <span class="highlight">5-digit ID</span> is saved to your browser</li>
                         <li>Click <span class="highlight">"Find Opponent"</span> to join the matchmaking queue</li>
-                        <li>Or enter an opponent's ID and click <span class="highlight">"Join"</span></li>
+                        <li>Or enter an opponent's ID and click <span class="highlight">"Challenge"</span></li>
                         <li>X always starts (top row)</li>
                         <li>Win = +10 Elo, Lose = -10 Elo, Draw = no change</li>
                         <li>All pieces in winning line must have moved</li>
                         <li><span class="highlight">No piece capturing</span></li>
                         <li>Each move has a 1-minute limit; timeout = loss</li>
-                        <li>Leaving the game = loss, opponent = win</li>
                     </ul>
                 </div>
             </div>
@@ -309,7 +307,6 @@
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-        console.log('🔥 Firebase connected!');
 
         document.addEventListener('DOMContentLoaded', () => {
 
@@ -329,7 +326,7 @@
             }
 
             // ============================================================
-            // 1. ONLINE SYSTEM - FIREBASE VERSION
+            // 1. ONLINE SYSTEM - FIREBASE VERSION (No leave option)
             // ============================================================
 
             const MY_ID_KEY = 'sega2_playerId';
@@ -479,13 +476,8 @@
                     this.drawClaimed = false;
                     this.winner = null;
                     this.moveHistory = [];
-                    // Deterministic side assignment: both browsers calculate the same result.
                     this.p1Side = String(player1Id) < String(player2Id) ? 'X' : 'O';
                     this.p2Side = this.p1Side === 'X' ? 'O' : 'X';
-
-                    // Persistence is handled by the OnlineManager.
-                    // Never write the initial board from the constructor because another
-                    // browser may already have a newer authoritative game state.
                 }
 
                 async updatePlayers() {
@@ -650,8 +642,8 @@
                 }
             }
 
-            // ---- Online Manager ----
-            const MOVE_LIMIT_MS = 60 * 1000; // 1 minute maximum per move
+            // ---- Online Manager (no leave) ----
+            const MOVE_LIMIT_MS = 60 * 1000;
 
             const onlineManager = {
                 currentPlayer: null,
@@ -731,8 +723,6 @@
 
                 installPresenceHooks() {
                     window.addEventListener('beforeunload', () => {
-                        // onDisconnect is the reliable Firebase mechanism; this is only a
-                        // best-effort hint for same-tab navigation.
                         if (this.presenceRef && this.game && !this.game.gameOver) {
                             try { this.presenceRef.onDisconnect().remove(); } catch (_) {}
                         }
@@ -745,7 +735,6 @@
                 async checkPresenceState() {
                     if (!this.currentPlayer || !this.matchFound || !this.opponentId) return;
                     if (!this.presenceRef) return;
-                    // Firebase presence listener below handles actual disconnects.
                 },
 
                 async cleanOwnQueueEntry() {
@@ -883,8 +872,6 @@
                     allPresenceRef.on('value', async snap => {
                         const presence = snap.val() || {};
                         if (!this.game || this.game.gameOver || !this.opponentId) return;
-                        // Do not treat a missing opponent as a forfeit until the match
-                        // has actually started and both players have joined it.
                         const matchSnap = await db.ref('matches/' + match.id).once('value');
                         const liveMatch = matchSnap.val() || {};
                         if (!liveMatch.startedAt || liveMatch.status !== 'active' || liveMatch.result) return;
@@ -1051,7 +1038,6 @@
                     const incomingRevision = Number(data.revision || 0);
                     const localRevision = Number(this.game.revision || 0);
                     if (incomingRevision < localRevision) return;
-                    // Do not overwrite an optimistic/local move with an older payload.
                     this.game.board = data.board || this.game.board;
                     this.game.hasMoved = data.hasMoved || this.game.hasMoved;
                     this.game.currentPlayer = data.currentPlayer || this.game.currentPlayer;
@@ -1098,13 +1084,11 @@
                         if (state.currentPlayer !== mySide) return;
                         if (!state.board || !state.board[fromRow] || state.board[fromRow][fromCol] !== mySide) return;
                         if (!state.board[toRow] || state.board[toRow][toCol] !== '') return;
-                        // Only any empty cell is legal, matching the existing game rules.
                         state.board[toRow][toCol] = mySide;
                         state.board[fromRow][fromCol] = '';
                         state.hasMoved[toRow][toCol] = true;
                         state.moveHistory = state.moveHistory || [];
                         state.moveHistory.push({ from:{row:fromRow,col:fromCol}, to:{row:toRow,col:toCol}, player:mySide, at:now });
-                        // Preserve the existing fivefold-position draw rule.
                         let positionKey = '';
                         for (let rr = 0; rr < 3; rr++) {
                             for (let cc = 0; cc < 3; cc++) {
@@ -1262,41 +1246,6 @@
                     await this.handleGameEnd(true);
                 },
 
-                async finalizeByLeaving() {
-                    if (!this.game || this.game.gameOver || !this.opponentId) return;
-                    const matchKey = matchId(this.currentPlayer.id, this.opponentId);
-                    const now = this.serverNow();
-                    const ref = db.ref('matches/' + matchKey);
-                    const result = await ref.transaction(match => {
-                        if (!match || match.result) return match;
-                        match = JSON.parse(JSON.stringify(match));
-                        match.status = 'completed';
-                        match.result = 'win_by_leave';
-                        match.winnerId = this.opponentId;
-                        match.loserId = this.currentPlayer.id;
-                        match.endReason = 'left';
-                        match.endedAt = now;
-                        return match;
-                    });
-                    const m = result.snapshot.val();
-                    if (m) {
-                        await db.ref('games/' + matchKey).transaction(state => {
-                            if (!state) return state;
-                            if (state.gameOver) return state;
-                            state = JSON.parse(JSON.stringify(state));
-                            state.gameOver = true;
-                            state.winner = this.mySide === 'X' ? 'O' : 'X';
-                            state.winnerId = this.opponentId;
-                            state.loserId = this.currentPlayer.id;
-                            state.endReason = 'left';
-                            state.endedAt = now;
-                            state.revision = Number(state.revision || 0) + 1;
-                            return state;
-                        });
-                    }
-                    await this.handleGameEnd(true, true);
-                },
-
                 async settleMatchOnce(matchData) {
                     const matchKey = matchId(this.currentPlayer.id, this.opponentId);
                     const settlementRef = db.ref('matches/' + matchKey + '/settlement');
@@ -1347,7 +1296,7 @@
                     return true;
                 },
 
-                async handleGameEnd(fromLeave = false, selfLeaving = false) {
+                async handleGameEnd(fromLeave = false) {
                     const game = this.game;
                     if (!game || (!game.gameOver && !fromLeave) || !this.opponentId) return;
                     const matchKey = matchId(this.currentPlayer.id, this.opponentId);
@@ -1366,7 +1315,6 @@
                         matchData.status = 'completed';
                         matchData.endReason = game.endReason || (game.winner === 'draw' ? 'draw' : 'win');
                         matchData.endedAt = matchData.endedAt || this.serverNow();
-                        // Only the first browser that writes this result wins the race.
                         await db.ref('matches/' + matchKey).transaction(current => {
                             if (current && current.result) return current;
                             return { ...current, ...matchData };
@@ -1375,7 +1323,7 @@
                     await this.settleMatchOnce(matchData);
 
                     const myResult = game.winner === 'draw' ? 'draw' : (winnerId === this.currentPlayer.id ? 'win' : 'loss');
-                    if (!selfLeaving && !this.resultShown) {
+                    if (!this.resultShown) {
                         this.resultShown = true;
                         const latest = await db.ref('players/' + this.currentPlayer.id).once('value');
                         const me = latest.val() || this.currentPlayer;
@@ -1403,17 +1351,6 @@
                     this.updateUI();
                     this.renderBoard();
                     this.updateTimer();
-                },
-
-                async leaveGame() {
-                    if (this.inQueue && !this.game) { await this.leaveQueue(); return; }
-                    if (this.game && !this.game.gameOver) {
-                        if (!confirm('Are you sure you want to leave? You will lose this game.')) return;
-                        await this.finalizeByLeaving();
-                        showToast('You left the game.');
-                        return;
-                    }
-                    await this.cleanupLocalMatch();
                 },
 
                 updateUI() {
@@ -1730,22 +1667,16 @@
                 return false;
             }
 
-            // 🔥 NEW: Evaluate a move and return its score with win/loss/draw info
             function evaluateMove(board, hasMoved, fromRow, fromCol, toRow, toCol, aiSide, playerSide) {
-                // Make the move
                 const orig = board[toRow][toCol];
                 const origMoved = hasMoved[toRow][toCol];
                 board[toRow][toCol] = aiSide;
                 board[fromRow][fromCol] = '';
                 hasMoved[toRow][toCol] = true;
 
-                // Check immediate win
                 const isWin = checkWinNowAI(board, hasMoved, aiSide);
-                
-                // Use minimax to evaluate the position
                 const score = minimaxAI(board, hasMoved, 10, -Infinity, Infinity, false, 1, aiSide, playerSide);
                 
-                // Undo the move
                 board[fromRow][fromCol] = aiSide;
                 board[toRow][toCol] = orig;
                 hasMoved[toRow][toCol] = origMoved;
@@ -1753,12 +1684,10 @@
                 return { score, isWin };
             }
 
-            // 🔥 NEW: Find non-losing moves for the opening
             function findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide) {
                 const moves = [];
                 const results = [];
                 
-                // Get all possible first moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1773,7 +1702,6 @@
                     }
                 }
 
-                // Evaluate each move
                 for (const move of moves) {
                     const { from, to } = move;
                     const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
@@ -1784,38 +1712,30 @@
                     });
                 }
 
-                // Find the best score (maximizing for AI)
                 let bestScore = -Infinity;
                 for (const r of results) {
                     if (r.score > bestScore) bestScore = r.score;
                 }
 
-                // A move is non-losing if it doesn't lead to a loss (score >= 0)
-                // or if it's the best available
                 const nonLosingMoves = results.filter(r => r.score >= 0);
                 
-                // If no non-losing moves, return the best move
                 if (nonLosingMoves.length === 0) {
                     const bestResults = results.filter(r => r.score === bestScore);
                     return bestResults.map(r => r.move);
                 }
 
-                // If there are winning moves, return only those
                 const winningMoves = results.filter(r => r.isWin);
                 if (winningMoves.length > 0) {
                     return winningMoves.map(r => r.move);
                 }
 
-                // Otherwise return all non-losing moves
                 return nonLosingMoves.map(r => r.move);
             }
 
-            // 🔥 NEW: Find the best move with win percentage tie-breaking
             function findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide) {
                 const moves = [];
                 const results = [];
                 
-                // Get all possible moves
                 for (let r = 0; r < 3; r++) {
                     for (let c = 0; c < 3; c++) {
                         if (board[r][c] === aiSide) {
@@ -1830,7 +1750,6 @@
                     }
                 }
 
-                // Evaluate each move
                 for (const move of moves) {
                     const { from, to } = move;
                     const result = evaluateMove(board, hasMoved, from.row, from.col, to.row, to.col, aiSide, playerSide);
@@ -1841,30 +1760,23 @@
                     });
                 }
 
-                // Check if there's a winning move
                 const winningMoves = results.filter(r => r.isWin);
                 if (winningMoves.length > 0) {
-                    // Return a random winning move
                     return winningMoves[Math.floor(Math.random() * winningMoves.length)].move;
                 }
 
-                // Find the best score
                 let bestScore = -Infinity;
                 for (const r of results) {
                     if (r.score > bestScore) bestScore = r.score;
                 }
 
-                // Get all moves with the best score
                 const bestMoves = results.filter(r => r.score === bestScore);
 
-                // If there's only one best move, return it
                 if (bestMoves.length === 1) {
                     return bestMoves[0].move;
                 }
 
-                // If the best score is a draw (0) or better, choose the one with highest win potential
                 if (bestScore >= 0) {
-                    // Calculate win potential for each best move
                     let maxPotential = -Infinity;
                     let bestPotentialMove = bestMoves[0];
                     
@@ -1885,25 +1797,17 @@
                     return bestPotentialMove;
                 }
 
-                // If all moves lose, return the one with the highest score (least bad)
                 return bestMoves[0].move;
             }
 
             function findBestMoveAI(board, hasMoved, aiSide, playerSide, isOpening) {
-                // 🔥 For the opening move (move 1), randomly choose between non-losing moves
                 if (isOpening) {
                     const nonLosingMoves = findNonLosingOpeningMoves(board, hasMoved, aiSide, playerSide);
                     if (nonLosingMoves.length > 0) {
                         const randomIndex = Math.floor(Math.random() * nonLosingMoves.length);
-                        const selected = nonLosingMoves[randomIndex];
-                        console.log(`🎲 Opening move: Randomly selected from ${nonLosingMoves.length} non-losing moves`);
-                        return selected;
+                        return nonLosingMoves[randomIndex];
                     }
-                    // Fallback: if no non-losing moves found, use the best move
-                    console.log('⚠️ No non-losing moves found, using best move');
                 }
-
-                // 🔥 For all other moves, use the best move with win percentage tie-breaking
                 return findBestMoveWithWinPercentage(board, hasMoved, aiSide, playerSide);
             }
 
@@ -2011,8 +1915,6 @@
                 if (g.gameOver || g.currentPlayer !== g.aiSide) return;
                 
                 const isOpening = g.totalMoves === 0;
-                console.log(`AI move #${g.totalMoves}, isOpening: ${isOpening}`);
-                
                 const move = findBestMoveAI(g.board, g.hasMoved, g.aiSide, g.playerSide, isOpening);
                 
                 if (move) {
@@ -2314,7 +2216,10 @@
                 gameOverlay.classList.remove('active');
                 const activeTab = document.querySelector('.tab-btn.active');
                 if (activeTab.dataset.tab === 'online') {
-                    onlineManager.leaveGame();
+                    // No leave; just reset UI state and re-init
+                    onlineManager.cleanupLocalMatch();
+                    onlineManager.updateUI();
+                    onlineManager.renderBoard();
                 } else if (activeTab.dataset.tab === 'vsAI') {
                     resetAI();
                     choiceOverlay.classList.remove('hidden');
@@ -2361,16 +2266,6 @@
                 onlineManager.joinOpponent(id);
             });
 
-            document.getElementById('resetOnlineBtn').addEventListener('click', () => {
-                if (onlineManager.game && !onlineManager.game.gameOver) {
-                    if (confirm('Are you sure you want to leave the game? This will count as a loss.')) {
-                        onlineManager.leaveGame();
-                    }
-                } else {
-                    onlineManager.leaveGame();
-                }
-            });
-
             claimDrawOnline.addEventListener('click', () => {
                 onlineManager.claimDraw();
             });
@@ -2392,9 +2287,6 @@
 
             console.log('Sega 2 Online initialized!');
             console.log('Your ID:', onlineManager.currentPlayer.id);
-            getPlayerRegistry().then(registry => {
-                console.log('Players registered:', Object.keys(registry).length);
-            });
         });
     </script>
 </body>
