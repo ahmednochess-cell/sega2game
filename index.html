@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sega 2 – Online Multiplayer</title>
     
     <!-- 🔥 FIREBASE SDK -->
@@ -89,6 +90,15 @@
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; z-index: 3000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .toast.show { opacity: 1; }
         @media (max-width: 768px) { .game-area { flex-direction: column; } .instructions { margin-top: 20px; padding: 0; } .player-info { flex-direction: column; align-items: center; } .player { width: 90%; margin-bottom: 10px; } .board { width: 280px; height: 280px; } .lobby-area { flex-direction: column; align-items: stretch; } .lobby-controls { justify-content: center; } }
+
+        .challenge-panel { margin: 0 20px 20px; padding: 15px; background: #f7f9ff; border: 1px solid #d8def0; border-radius: 12px; }
+        .challenge-panel h3 { margin-bottom: 10px; color: #1a2a6c; }
+        .challenge-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; margin:8px 0; background:#fff; border-radius:9px; border:1px solid #e1e5ef; }
+        .challenge-actions { display:flex; gap:7px; }
+        .challenge-actions button { border:0; border-radius:7px; padding:7px 12px; cursor:pointer; font-weight:600; }
+        .accept-challenge { background:#2e8b57; color:#fff; }
+        .decline-challenge { background:#b21f1f; color:#fff; }
+        .challenge-empty { color:#777; font-size:.9rem; }
     </style>
 </head>
 <body>
@@ -97,7 +107,7 @@
     <div class="toast" id="toast"></div>
 
     <!-- SIDE CHOICE OVERLAY (for vs AI) -->
-    <div class="choice-overlay hidden" id="choiceOverlay">
+    <div class="choice-overlay" id="choiceOverlay">
         <div class="choice-box">
             <h2>⚔️ Choose Your Side</h2>
             <p style="margin-bottom: 10px; color: #444;">You play as <strong>X</strong> (top row) or <strong>O</strong> (bottom row).<br>X always starts.</p>
@@ -124,24 +134,24 @@
         <!-- VS AI TAB (DEFAULT) -->
         <div class="tab-content active" id="tab-vsAI">
             <div class="game-info">
-                <div class="status" id="statusAI">Your turn (O)</div>
+                <div class="status" id="statusAI">Your turn (X)</div>
                 <div class="controls">
                     <button id="resetAI">Reset Game</button>
                 </div>
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardAI"><div class="cell X inactive" data-row="0" data-col="0">X</div><div class="cell" data-row="0" data-col="1"></div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell" data-row="1" data-col="1"></div><div class="cell X" data-row="1" data-col="2">X</div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
+                    <div class="board" id="boardAI"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawAI">🔄 Claim Draw</button>
                     </div>
                     <div class="player-info">
                         <div class="player player-x" id="playerXAI">
-                            <h3>AI (X)</h3>
+                            <h3>Player (X)</h3>
                             <p>Top Row</p>
                         </div>
                         <div class="player player-o" id="playerOAI">
-                            <h3>Player (O)</h3>
+                            <h3>AI (O)</h3>
                             <p>Bottom Row</p>
                         </div>
                     </div>
@@ -165,18 +175,23 @@
         <div class="tab-content" id="tab-online">
             <div class="lobby-area">
                 <div class="player-profile">
-                    <span class="player-id-box" id="myIdDisplay">ID: 12405</span>
-                    <span class="player-elo" id="myEloDisplay">⭐ 1516</span>
+                    <span class="player-id-box" id="myIdDisplay">ID: -----</span>
+                    <span class="player-elo" id="myEloDisplay">⭐ 1500</span>
                     <span class="online-status" id="onlineStatus">● Online</span>
                     <span class="queue-status" id="queueStatus"></span>
-                    <span class="debug-info" id="debugInfo">Queue: 0 | Players: 3</span>
+                    <span class="debug-info" id="debugInfo"></span>
                 </div>
                 <div class="lobby-controls">
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
-                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5">
+                    <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
                     <button class="btn-join" id="joinOpponentBtn">Join</button>
                     <button id="resetOnlineBtn">Leave Game</button>
                 </div>
+            </div>
+
+            <div class="challenge-panel">
+                <h3>⚔️ Challenges</h3>
+                <div id="challengeList"><div class="challenge-empty">No pending challenges.</div></div>
             </div>
 
             <div class="game-info">
@@ -188,7 +203,7 @@
 
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardOnline"><div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Waiting for opponent...</div></div>
+                    <div class="board" id="boardOnline"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawOnline">🔄 Claim Draw</button>
                     </div>
@@ -229,7 +244,7 @@
             </div>
             <div class="game-area">
                 <div class="board-container">
-                    <div class="board" id="boardFriend"><div class="cell X inactive" data-row="0" data-col="0">X</div><div class="cell X inactive" data-row="0" data-col="1">X</div><div class="cell X inactive" data-row="0" data-col="2">X</div><div class="cell" data-row="1" data-col="0"></div><div class="cell" data-row="1" data-col="1"></div><div class="cell" data-row="1" data-col="2"></div><div class="cell O inactive" data-row="2" data-col="0">O</div><div class="cell O inactive" data-row="2" data-col="1">O</div><div class="cell O inactive" data-row="2" data-col="2">O</div></div>
+                    <div class="board" id="boardFriend"></div>
                     <div class="draw-claim-area">
                         <button class="btn-claim-draw" id="claimDrawFriend">🔄 Claim Draw</button>
                     </div>
@@ -257,8 +272,7 @@
         </div>
 
         <footer>
-            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243" 
-big shout for brave and deepseek </p>
+            <p>Sega 2 Online – contact ahmed sherief "+20 1557599243"</p>
         </footer>
     </div>
 
@@ -322,32 +336,51 @@ big shout for brave and deepseek </p>
                 db.ref('players').set(registry);
             }
 
+            function gameKey(player1Id, player2Id) {
+                return [String(player1Id), String(player2Id)].sort().join('_');
+            }
+
             async function getQueue() {
                 const snapshot = await db.ref('queue').once('value');
-                return snapshot.val() || [];
+                const value = snapshot.val();
+                if (!value) return {};
+                if (Array.isArray(value)) {
+                    const migrated = {};
+                    value.forEach(id => { if (id) migrated[id] = { id, createdAt: Date.now() }; });
+                    return migrated;
+                }
+                return value;
             }
 
             function saveQueue(queue) {
-                db.ref('queue').set(queue);
+                return db.ref('queue').set(queue || {});
             }
 
             function saveGame(player1Id, player2Id, data) {
-                db.ref('games/' + player1Id + '_' + player2Id).set(data);
+                return db.ref('games/' + gameKey(player1Id, player2Id)).set(data);
             }
 
             async function loadGame(player1Id, player2Id) {
-                const snapshot = await db.ref('games/' + player1Id + '_' + player2Id).once('value');
+                const snapshot = await db.ref('games/' + gameKey(player1Id, player2Id)).once('value');
                 return snapshot.val();
             }
 
             function deleteGame(player1Id, player2Id) {
-                db.ref('games/' + player1Id + '_' + player2Id).remove();
+                return db.ref('games/' + gameKey(player1Id, player2Id)).remove();
             }
 
             function subscribeGame(player1Id, player2Id, callback) {
-                db.ref('games/' + player1Id + '_' + player2Id).on('value', (snapshot) => {
-                    callback(snapshot.val());
-                });
+                const ref = db.ref('games/' + gameKey(player1Id, player2Id));
+                ref.on('value', (snapshot) => callback(snapshot.val()));
+                return ref;
+            }
+
+            function updatePlayer(playerId, patch) {
+                return db.ref('players/' + playerId).update(patch);
+            }
+
+            function matchId(player1Id, player2Id) {
+                return gameKey(player1Id, player2Id);
             }
 
             function generateId() {
@@ -435,10 +468,9 @@ big shout for brave and deepseek </p>
                     this.drawClaimed = false;
                     this.winner = null;
                     this.moveHistory = [];
-                    const sides = ['X', 'O'];
-                    const shuffled = sides.sort(() => Math.random() - 0.5);
-                    this.p1Side = shuffled[0];
-                    this.p2Side = shuffled[1];
+                    // Deterministic side assignment: both browsers calculate the same result.
+                    this.p1Side = String(player1Id) < String(player2Id) ? 'X' : 'O';
+                    this.p2Side = this.p1Side === 'X' ? 'O' : 'X';
 
                     this.updatePlayers();
                     this.saveToRegistry();
@@ -617,558 +649,359 @@ big shout for brave and deepseek </p>
                 gameListener: null,
                 syncInterval: null,
                 queuePollInterval: null,
+                challengeListener: null,
+                challengeStatusListeners: {},
+                currentMatchListener: null,
+                endingGame: false,
 
                 async init() {
                     this.currentPlayer = await getOrCreatePlayer();
-                    this.currentPlayer.inGame = false;
-                    this.currentPlayer.opponentId = null;
-                    this.currentPlayer.side = null;
-                    this.currentPlayer.waitingForMatch = false;
-                    const registry = await getPlayerRegistry();
-                    registry[this.currentPlayer.id] = this.currentPlayer;
-                    savePlayerRegistry(registry);
-
-                    await cleanQueue();
-                    await this.checkForExistingGame();
-
-                    this.startQueuePolling();
-
-                    this.updateUI();
-                    this.renderBoard();
-                    this.startSync();
-
-                    setTimeout(() => {
-                        if (!this.game && this.currentPlayer.opponentId) {
-                            console.log('⚠️ Force checking for existing game...');
-                            this.checkForExistingGame();
-                        }
-                    }, 2000);
-
-                    return this.currentPlayer;
-                },
-
-                startQueuePolling() {
-                    if (this.queuePollInterval) clearInterval(this.queuePollInterval);
-                    this.queuePollInterval = setInterval(async () => {
-                        if (this.inQueue || (!this.matchFound && !this.currentPlayer.inGame)) {
-                            const queue = await getQueue();
-                            const registry = await getPlayerRegistry();
-                            
-                            const cleanQueueList = queue.filter(id => {
-                                const p = registry[id];
-                                return p && p.waitingForMatch && !p.inGame;
-                            });
-                            
-                            if (cleanQueueList.length !== queue.length) {
-                                saveQueue(cleanQueueList);
-                            }
-                            
-                            if (this.inQueue) {
-                                const waitingOthers = cleanQueueList.filter(id => 
-                                    id !== this.currentPlayer.id && 
-                                    registry[id] && 
-                                    registry[id].waitingForMatch &&
-                                    !registry[id].inGame
-                                );
-                                
-                                if (waitingOthers.length > 0) {
-                                    const opponentId = waitingOthers[0];
-                                    console.log('🎯 Queue polling found opponent:', opponentId);
-                                    
-                                    const newQueue = cleanQueueList.filter(id => 
-                                        id !== opponentId && id !== this.currentPlayer.id
-                                    );
-                                    saveQueue(newQueue);
-                                    
-                                    const me = this.currentPlayer;
-                                    me.waitingForMatch = false;
-                                    const reg = await getPlayerRegistry();
-                                    reg[me.id] = me;
-                                    if (reg[opponentId]) {
-                                        reg[opponentId].waitingForMatch = false;
-                                    }
-                                    savePlayerRegistry(reg);
-                                    
-                                    this.inQueue = false;
-                                    showToast('Match found! Starting game...');
-                                    await this.startMatch(opponentId);
-                                }
-                            }
-                            
-                            this.updateUI();
-                        }
-                    }, 1000);
-                },
-
-                async checkForExistingGame() {
-                    const registry = await getPlayerRegistry();
-                    const me = this.currentPlayer;
-                    console.log('🔍 Checking for existing game...', me.opponentId);
-                    
-                    if (me.opponentId && registry[me.opponentId]) {
-                        const opp = registry[me.opponentId];
-                        console.log('👤 Opponent found:', opp);
-                        
-                        if (opp.inGame) {
-                            const gameData = await loadGame(me.id, me.opponentId);
-                            console.log('📦 Game data loaded:', gameData);
-                            
-                            if (gameData && !gameData.gameOver) {
-                                const game = new OnlineGame(me.id, me.opponentId);
-                                Object.assign(game, gameData);
-                                this.game = game;
-                                this.opponentId = me.opponentId;
-                                this.mySide = game.getSide(me.id);
-                                this.matchFound = true;
-                                this.inQueue = false;
-                                
-                                if (this.gameListener) {
-                                    db.ref('games/' + me.id + '_' + me.opponentId).off();
-                                }
-                                this.gameListener = subscribeGame(me.id, me.opponentId, (data) => {
-                                    console.log('📡 Game update received:', data);
-                                    if (data) this.syncGameData(data);
-                                });
-                                
-                                this.renderBoard();
-                                this.updateUI();
-                                showToast('Game joined!');
-                                return;
-                            }
-                        }
-                    }
-                    
-                    if (me.opponentId) {
-                        console.log('🧹 Clearing stale game data...');
-                        deleteGame(me.id, me.opponentId);
-                        me.opponentId = null;
-                        me.inGame = false;
-                        me.side = null;
-                        const reg = await getPlayerRegistry();
-                        reg[me.id] = me;
-                        savePlayerRegistry(reg);
-                    }
-                    console.log('❌ No existing game found');
-                },
-
-                startSync() {
-                    if (this.syncInterval) clearInterval(this.syncInterval);
-                    this.syncInterval = setInterval(() => {
-                        this.syncGameState();
-                    }, 2000);
-                },
-
-                syncGameState() {
-                    if (!this.game || this.game.gameOver) return;
-                    this.game.saveToRegistry();
-                },
-
-                syncGameData(data) {
-                    if (!this.game || this.game.gameOver) return;
-                    console.log('🔄 Syncing game data...');
-                    if (data && data.moveHistory && data.moveHistory.length > this.game.moveHistory.length) {
-                        this.game.board = data.board;
-                        this.game.hasMoved = data.hasMoved;
-                        this.game.currentPlayer = data.currentPlayer;
-                        this.game.gameOver = data.gameOver;
-                        this.game.winner = data.winner;
-                        this.game.positionHistory = data.positionHistory || [];
-                        this.game.positionCounts = data.positionCounts || {};
-                        this.game.drawAvailable = data.drawAvailable || false;
-                        this.game.drawClaimed = data.drawClaimed || false;
-                        this.game.moveHistory = data.moveHistory || [];
-                        this.renderBoard();
-
-                        if (this.game.gameOver) {
-                            this.handleGameEnd();
-                            return;
-                        }
-
-                        if (this.game.currentPlayer === this.mySide) {
-                            this.updateUI();
-                        } else {
-                            setTimeout(() => this.simulateOpponentMove(), 600);
-                        }
-                    }
-                },
-
-                async findOpponent() {
-                    if (this.inQueue) {
-                        this.leaveQueue();
-                        return;
-                    }
-
-                    if (this.matchFound || this.currentPlayer.inGame) {
-                        showToast('You are already in a game!');
-                        return;
-                    }
-
-                    await cleanQueue();
-                    const registry = await getPlayerRegistry();
-                    let queue = await getQueue();
-
-                    const waitingPlayers = queue.filter(id =>
-                        id !== this.currentPlayer.id &&
-                        registry[id] &&
-                        registry[id].waitingForMatch &&
-                        !registry[id].inGame
-                    );
-
-                    if (waitingPlayers.length > 0) {
-                        const opponentId = waitingPlayers[0];
-                        const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
-                        saveQueue(newQueue);
-
-                        const me = this.currentPlayer;
-                        me.waitingForMatch = false;
-                        const reg = await getPlayerRegistry();
-                        reg[me.id] = me;
-                        if (reg[opponentId]) {
-                            reg[opponentId].waitingForMatch = false;
-                        }
-                        savePlayerRegistry(reg);
-
-                        showToast('Match found! Starting game...');
-                        await this.startMatch(opponentId);
-                        return;
-                    }
-
-                    const me = this.currentPlayer;
-                    me.waitingForMatch = true;
-                    const reg = await getPlayerRegistry();
-                    reg[me.id] = me;
-                    savePlayerRegistry(reg);
-
-                    queue = await getQueue();
-                    if (!queue.includes(me.id)) {
-                        queue.push(me.id);
-                        saveQueue(queue);
-                        console.log('✅ Added to queue:', queue);
-                    } else {
-                        console.log('⚠️ Already in queue:', queue);
-                    }
-                    this.inQueue = true;
-                    showToast('Searching for opponent...');
-                    this.updateUI();
-                },
-
-                leaveQueue() {
                     this.inQueue = false;
-                    const me = this.currentPlayer;
-                    me.waitingForMatch = false;
-                    getPlayerRegistry().then(reg => {
-                        reg[me.id] = me;
-                        savePlayerRegistry(reg);
-                    });
-
-                    getQueue().then(queue => {
-                        const newQueue = queue.filter(id => id !== me.id);
-                        saveQueue(newQueue);
-                    });
-
-                    showToast('Left queue');
-                    this.updateUI();
-                    this.renderBoard();
-                },
-
-                async joinOpponent(opponentId) {
-                    if (!opponentId || opponentId.length !== 5) {
-                        showToast('Please enter a valid 5-digit ID');
-                        return;
-                    }
-
-                    if (opponentId === this.currentPlayer.id) {
-                        showToast('You cannot play against yourself!');
-                        return;
-                    }
-
-                    const registry = await getPlayerRegistry();
-                    const opponent = registry[opponentId];
-                    if (!opponent) {
-                        showToast('Player not found! Make sure the ID is correct.');
-                        return;
-                    }
-
-                    if (opponent.inGame) {
-                        showToast('This player is already in a game!');
-                        return;
-                    }
-
-                    let queue = await getQueue();
-                    if (queue.includes(opponentId) && opponent.waitingForMatch) {
-                        const newQueue = queue.filter(id => id !== opponentId && id !== this.currentPlayer.id);
-                        saveQueue(newQueue);
-
-                        if (this.inQueue) {
-                            this.inQueue = false;
-                            const me = this.currentPlayer;
-                            me.waitingForMatch = false;
-                            const reg = await getPlayerRegistry();
-                            reg[me.id] = me;
-                            savePlayerRegistry(reg);
-                        }
-                        
-                        const reg = await getPlayerRegistry();
-                        if (reg[opponentId]) {
-                            reg[opponentId].waitingForMatch = false;
-                        }
-                        savePlayerRegistry(reg);
-                        
-                        showToast('Joining opponent...');
-                        await this.startMatch(opponentId);
-                        return;
-                    }
-
-                    showToast('Starting match with ' + opponentId);
-                    await this.startMatch(opponentId);
-                },
-
-                async startMatch(opponentId) {
-                    console.log('🚀 Starting match with:', opponentId);
-                    const registry = await getPlayerRegistry();
-                    const opponent = registry[opponentId];
-                    if (!opponent) {
-                        showToast('Opponent not found!');
-                        return;
-                    }
-
-                    this.game = new OnlineGame(this.currentPlayer.id, opponentId);
-                    this.mySide = this.game.getSide(this.currentPlayer.id);
-                    this.opponentId = opponentId;
-
-                    const me = this.currentPlayer;
-                    me.inGame = true;
-                    me.opponentId = opponentId;
-                    me.side = this.mySide;
-                    me.waitingForMatch = false;
-
-                    const reg = await getPlayerRegistry();
-                    reg[me.id] = me;
-                    reg[opponentId] = opponent;
-                    savePlayerRegistry(reg);
-
-                    this.inQueue = false;
-                    this.matchFound = true;
-                    this.game.saveToRegistry();
-
-                    if (this.gameListener) {
-                        db.ref('games/' + me.id + '_' + opponentId).off();
-                    }
-                    this.gameListener = subscribeGame(me.id, opponentId, (data) => {
-                        console.log('📡 Game update received in startMatch:', data);
-                        if (data) this.syncGameData(data);
-                    });
-
-                    this.updateUI();
-                    this.renderBoard();
-                    showToast('Game started! You are ' + this.mySide);
-
-                    if (this.mySide === 'O') {
-                        setTimeout(() => this.simulateOpponentMove(), 800);
-                    }
-                },
-
-                simulateOpponentMove() {
-                    if (!this.game || this.game.gameOver) return;
-                    if (this.game.currentPlayer === this.mySide) return;
-
-                    const opponentId = this.opponentId;
-                    const opponentSide = this.game.getSide(opponentId);
-
-                    const moves = this.getAllPossibleMoves(this.game, opponentSide);
-                    if (moves.length === 0) return;
-
-                    let bestMove = moves[0];
-                    let bestScore = -Infinity;
-
-                    for (const move of moves) {
-                        const { from, to } = move;
-                        let score = 0;
-                        if (to.row === 1 && to.col === 1) score += 10;
-                        if (!this.game.hasMoved[from.row][from.col]) score += 5;
-                        score += Math.random() * 3;
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestMove = move;
-                        }
-                    }
-
-                    this.game.makeMove(bestMove.from.row, bestMove.from.col, bestMove.to.row, bestMove.to.col);
-                    this.game.saveToRegistry();
-                    this.renderBoard();
-
-                    if (this.game.gameOver) {
-                        this.handleGameEnd();
-                        return;
-                    }
-
-                    if (this.game.currentPlayer === this.mySide) {
-                        this.updateUI();
-                    } else {
-                        setTimeout(() => this.simulateOpponentMove(), 600);
-                    }
-                },
-
-                getAllPossibleMoves(game, player) {
-                    const moves = [];
-                    for (let r = 0; r < 3; r++) {
-                        for (let c = 0; c < 3; c++) {
-                            if (game.board[r][c] === player) {
-                                for (let tr = 0; tr < 3; tr++) {
-                                    for (let tc = 0; tc < 3; tc++) {
-                                        if (game.board[tr][tc] === '') {
-                                            moves.push({ from: { row: r, col: c }, to: { row: tr, col: tc } });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return moves;
-                },
-
-                async handleGameEnd() {
-                    const game = this.game;
-                    if (!game || !game.gameOver) return;
-
-                    const myId = this.currentPlayer.id;
-                    const oppId = this.opponentId;
-                    const registry = await getPlayerRegistry();
-                    const me = registry[myId];
-                    const opp = registry[oppId];
-
-                    if (!me || !opp) return;
-
-                    let result = null;
-                    if (game.winner === 'draw') {
-                        result = 'draw';
-                    } else if (game.winner === this.mySide) {
-                        result = 'win';
-                    } else {
-                        result = 'loss';
-                    }
-
-                    const K = 32;
-                    let change = 0;
-                    if (result === 'win') {
-                        const expected = 1 / (1 + Math.pow(10, (opp.elo - me.elo) / 400));
-                        change = Math.round(K * (1 - expected));
-                        me.elo += change;
-                        opp.elo -= change;
-                        me.wins++;
-                        opp.losses++;
-                    } else if (result === 'loss') {
-                        const expected = 1 / (1 + Math.pow(10, (me.elo - opp.elo) / 400));
-                        change = Math.round(K * (1 - expected));
-                        me.elo -= change;
-                        opp.elo += change;
-                        me.losses++;
-                        opp.wins++;
-                    } else {
-                        me.draws++;
-                        opp.draws++;
-                    }
-                    me.gamesPlayed++;
-                    opp.gamesPlayed++;
-
-                    me.inGame = false;
-                    me.opponentId = null;
-                    me.side = null;
-                    opp.inGame = false;
-                    opp.opponentId = null;
-                    opp.side = null;
-
-                    savePlayerRegistry(registry);
-                    game.deleteFromRegistry();
-
-                    const title = result === 'win' ? 'You Win! 🎉' :
-                        result === 'loss' ? 'You Lose 😢' : 'Draw! 🤝';
-                    const msg = result === 'win' ? `+${change} Elo` :
-                        result === 'loss' ? `-${change} Elo` : 'No Elo change';
-                    const eloMsg = `⭐ ${me.elo}`;
-
-                    showResult(title, `Game over!`, eloMsg, msg);
-
                     this.matchFound = false;
                     this.game = null;
                     this.opponentId = null;
                     this.mySide = null;
+
+                    // Do not erase an opponent/match before checking it.
+                    const playerSnap = await db.ref('players/' + this.currentPlayer.id).once('value');
+                    const remote = playerSnap.val() || {};
+                    this.currentPlayer = { ...this.currentPlayer, ...remote };
+                    await updatePlayer(this.currentPlayer.id, {
+                        id: this.currentPlayer.id,
+                        elo: this.currentPlayer.elo || 1500,
+                        gamesPlayed: this.currentPlayer.gamesPlayed || 0,
+                        wins: this.currentPlayer.wins || 0,
+                        losses: this.currentPlayer.losses || 0,
+                        draws: this.currentPlayer.draws || 0,
+                        online: true
+                    });
+
+                    await this.cleanOwnQueueEntry();
+                    this.listenForChallenges();
+                    this.listenForCurrentMatch();
+                    await this.checkForExistingGame();
+                    this.startQueuePolling();
                     this.updateUI();
                     this.renderBoard();
+                    this.startSync();
+                    return this.currentPlayer;
+                },
+
+                async cleanOwnQueueEntry() {
+                    const snap = await db.ref('queue/' + this.currentPlayer.id).once('value');
+                    if (snap.exists()) await db.ref('queue/' + this.currentPlayer.id).remove();
+                    await updatePlayer(this.currentPlayer.id, { waitingForMatch: false });
+                },
+
+                listenForChallenges() {
+                    if (this.challengeListener) this.challengeListener.off();
+                    const ref = db.ref('challenges/' + this.currentPlayer.id);
+                    this.challengeListener = ref;
+                    ref.on('value', snap => {
+                        this.renderChallenges(snap.val() || {});
+                    });
+                },
+
+                renderChallenges(challenges) {
+                    const el = document.getElementById('challengeList');
+                    if (!el) return;
+                    const pending = Object.entries(challenges).filter(([id, c]) => c && c.status === 'pending');
+                    if (!pending.length) {
+                        el.innerHTML = '<div class="challenge-empty">No pending challenges.</div>';
+                        return;
+                    }
+                    el.innerHTML = pending.map(([cid, c]) => `
+                        <div class="challenge-item">
+                            <div><strong>Player ${c.fromId}</strong><br><small>⭐ ${c.fromElo || 1500} Elo</small></div>
+                            <div class="challenge-actions">
+                                <button class="accept-challenge" data-challenge="${cid}">Accept</button>
+                                <button class="decline-challenge" data-challenge="${cid}">Decline</button>
+                            </div>
+                        </div>`).join('');
+                    el.querySelectorAll('.accept-challenge').forEach(btn => btn.addEventListener('click', () => this.respondToChallenge(btn.dataset.challenge, true)));
+                    el.querySelectorAll('.decline-challenge').forEach(btn => btn.addEventListener('click', () => this.respondToChallenge(btn.dataset.challenge, false)));
+                },
+
+                async sendChallenge(opponentId) {
+                    const snap = await db.ref('players/' + opponentId).once('value');
+                    const opponent = snap.val();
+                    if (!opponent) { showToast('Player not found!'); return; }
+                    if (opponentId === this.currentPlayer.id) { showToast('You cannot challenge yourself!'); return; }
+                    if (opponent.inGame) { showToast('That player is already in a game.'); return; }
+                    const existing = await db.ref('challenges/' + opponentId).orderByChild('fromId').equalTo(this.currentPlayer.id).once('value');
+                    let duplicate = false;
+                    existing.forEach(c => { if (c.val() && c.val().status === 'pending') duplicate = true; });
+                    if (duplicate) { showToast('Challenge already sent.'); return; }
+                    const ref = db.ref('challenges/' + opponentId).push();
+                    await ref.set({
+                        fromId: this.currentPlayer.id,
+                        fromElo: this.currentPlayer.elo || 1500,
+                        toId: opponentId,
+                        status: 'pending',
+                        createdAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    showToast('Challenge sent to ' + opponentId);
+                },
+
+                async respondToChallenge(challengeId, accept) {
+                    const ref = db.ref('challenges/' + this.currentPlayer.id + '/' + challengeId);
+                    let challenge = null;
+                    const snap = await ref.once('value');
+                    challenge = snap.val();
+                    if (!challenge || challenge.status !== 'pending') return;
+                    if (!accept) {
+                        await ref.update({ status: 'declined', respondedAt: firebase.database.ServerValue.TIMESTAMP });
+                        showToast('Challenge declined');
+                        return;
+                    }
+
+                    const challengerId = challenge.fromId;
+                    const match = await this.createOrGetMatch(challengerId);
+                    await ref.update({ status: 'accepted', matchId: match.id, respondedAt: firebase.database.ServerValue.TIMESTAMP });
+                    // Wake the challenger immediately; their browser will then join the same match.
+                    await updatePlayer(challengerId, { currentMatch: match.id });
+                    await this.startMatch(challengerId, match);
+                    showToast('Challenge accepted!');
+                },
+
+                async createOrGetMatch(opponentId) {
+                    const id = matchId(this.currentPlayer.id, opponentId);
+                    const ref = db.ref('matches/' + id);
+                    const result = await ref.transaction(current => {
+                        if (current) return current;
+                        const ids = [this.currentPlayer.id, opponentId].sort();
+                        return {
+                            id,
+                            player1Id: ids[0],
+                            player2Id: ids[1],
+                            status: 'active',
+                            createdAt: firebase.database.ServerValue.TIMESTAMP
+                        };
+                    });
+                    return result.snapshot.val();
+                },
+
+                listenForCurrentMatch() {
+                    if (this.currentMatchListener) this.currentMatchListener.off();
+                    this.currentMatchListener = db.ref('players/' + this.currentPlayer.id + '/currentMatch');
+                    this.currentMatchListener.on('value', async snap => {
+                        const id = snap.val();
+                        if (!id || this.matchFound) return;
+                        const matchSnap = await db.ref('matches/' + id).once('value');
+                        const m = matchSnap.val();
+                        if (!m) return;
+                        const opp = m.player1Id === this.currentPlayer.id ? m.player2Id : m.player1Id;
+                        await this.startMatch(opp, m);
+                    });
+                },
+
+                async claimMatchForPlayer(opponentId, match) {
+                    await updatePlayer(this.currentPlayer.id, {
+                        inGame: true,
+                        opponentId,
+                        side: this.currentPlayer.id === match.player1Id ? 'X' : 'O',
+                        waitingForMatch: false,
+                        currentMatch: match.id
+                    });
+                },
+
+                async startQueuePolling() {
+                    if (this.queuePollInterval) clearInterval(this.queuePollInterval);
+                    this.queuePollInterval = setInterval(async () => {
+                        if (!this.currentPlayer || this.matchFound || this.currentPlayer.inGame) return;
+                        if (!this.inQueue) return;
+                        const snap = await db.ref('queue').once('value');
+                        const q = snap.val() || {};
+                        const candidates = Object.values(q)
+                            .filter(x => x && x.id && x.id !== this.currentPlayer.id)
+                            .sort((a,b) => (a.createdAt || 0) - (b.createdAt || 0));
+                        if (!candidates.length) { this.updateUI(); return; }
+
+                        // Deterministic pairing: everyone agrees on the same earliest opponent.
+                        const opponent = candidates[0];
+                        const match = await this.createOrGetMatch(opponent.id);
+                        await db.ref('queue/' + this.currentPlayer.id).remove();
+                        await db.ref('queue/' + opponent.id).remove();
+                        await updatePlayer(this.currentPlayer.id, { waitingForMatch: false, currentMatch: match.id });
+                        await updatePlayer(opponent.id, { waitingForMatch: false, currentMatch: match.id });
+                        await this.startMatch(opponent.id, match);
+                    }, 1000);
+                },
+
+                async findOpponent() {
+                    if (this.matchFound || this.currentPlayer.inGame) { showToast('You are already in a game!'); return; }
+                    if (this.inQueue) { await this.leaveQueue(); return; }
+                    const queueRef = db.ref('queue/' + this.currentPlayer.id);
+                    const existing = await db.ref('queue').once('value');
+                    const q = existing.val() || {};
+                    const candidates = Object.values(q).filter(x => x && x.id && x.id !== this.currentPlayer.id);
+                    if (candidates.length) {
+                        const opponent = candidates.sort((a,b) => (a.createdAt || 0) - (b.createdAt || 0))[0];
+                        const match = await this.createOrGetMatch(opponent.id);
+                        await db.ref('queue/' + opponent.id).remove();
+                        await queueRef.remove();
+                        await updatePlayer(this.currentPlayer.id, { waitingForMatch: false, currentMatch: match.id });
+                        await updatePlayer(opponent.id, { waitingForMatch: false, currentMatch: match.id });
+                        await this.startMatch(opponent.id, match);
+                        return;
+                    }
+                    await queueRef.set({ id: this.currentPlayer.id, elo: this.currentPlayer.elo || 1500, createdAt: firebase.database.ServerValue.TIMESTAMP });
+                    await updatePlayer(this.currentPlayer.id, { waitingForMatch: true, currentMatch: null });
+                    this.inQueue = true;
+                    showToast('Searching for a real player...');
+                    this.updateUI();
+                },
+
+                async leaveQueue() {
+                    await db.ref('queue/' + this.currentPlayer.id).remove();
+                    await updatePlayer(this.currentPlayer.id, { waitingForMatch: false });
+                    this.inQueue = false;
+                    showToast('Left matchmaking queue');
+                    this.updateUI();
+                },
+
+                async joinOpponent(opponentId) {
+                    opponentId = String(opponentId || '').replace(/\D/g, '').slice(0,5);
+                    if (opponentId.length !== 5) { showToast('Please enter a valid 5-digit ID'); return; }
+                    if (opponentId === this.currentPlayer.id) { showToast('You cannot challenge yourself!'); return; }
+                    await this.sendChallenge(opponentId);
+                },
+
+                async startMatch(opponentId, match = null) {
+                    if (this.matchFound && this.opponentId === opponentId) return;
+                    if (!match) match = await this.createOrGetMatch(opponentId);
+                    if (!match) return;
+
+                    this.inQueue = false;
+                    this.opponentId = opponentId;
+                    this.matchFound = true;
+                    this.mySide = this.currentPlayer.id === match.player1Id ? 'X' : 'O';
+                    await this.claimMatchForPlayer(opponentId, match);
+
+                    const data = await loadGame(this.currentPlayer.id, opponentId);
+                    if (data) {
+                        this.game = new OnlineGame(this.currentPlayer.id, opponentId);
+                        Object.assign(this.game, data);
+                    } else {
+                        this.game = new OnlineGame(this.currentPlayer.id, opponentId);
+                        await this.game.saveToRegistry();
+                    }
+
+                    if (this.gameListener) this.gameListener.off();
+                    this.gameListener = subscribeGame(this.currentPlayer.id, opponentId, data => {
+                        if (data) this.syncGameData(data);
+                    });
+                    this.updateUI();
+                    this.renderBoard();
+                    showToast('Match found! You are ' + this.mySide);
+                },
+
+                async checkForExistingGame() {
+                    const snap = await db.ref('players/' + this.currentPlayer.id).once('value');
+                    const me = snap.val() || {};
+                    if (!me.currentMatch || !me.opponentId) return;
+                    const matchSnap = await db.ref('matches/' + me.currentMatch).once('value');
+                    const m = matchSnap.val();
+                    if (!m) return;
+                    await this.startMatch(me.opponentId, m);
+                },
+
+                startSync() {
+                    if (this.syncInterval) clearInterval(this.syncInterval);
+                    // Do NOT periodically write the local board. A stale browser could overwrite
+                    // the other player's latest move. Moves are written only by handleClick().
+                    this.syncInterval = null;
+                },
+
+                syncGameState() {
+                    // Kept for compatibility with older code. Real-time Firebase listeners
+                    // deliver the authoritative game state; moves call saveToRegistry() directly.
+                },
+
+                syncGameData(data) {
+                    if (!data || !this.game) return;
+                    if ((data.moveHistory || []).length < (this.game.moveHistory || []).length) return;
+                    if ((data.moveHistory || []).length === (this.game.moveHistory || []).length && data.currentPlayer === this.game.currentPlayer) return;
+                    this.game.board = data.board;
+                    this.game.hasMoved = data.hasMoved;
+                    this.game.currentPlayer = data.currentPlayer;
+                    this.game.gameOver = data.gameOver;
+                    this.game.winner = data.winner;
+                    this.game.positionHistory = data.positionHistory || [];
+                    this.game.positionCounts = data.positionCounts || {};
+                    this.game.drawAvailable = data.drawAvailable || false;
+                    this.game.drawClaimed = data.drawClaimed || false;
+                    this.game.moveHistory = data.moveHistory || [];
+                    this.renderBoard();
+                    if (this.game.gameOver) this.handleGameEnd();
+                    else this.updateUI();
+                },
+
+                async handleGameEnd() {
+                    const game = this.game;
+                    if (!game || !game.gameOver || this.endingGame) return;
+                    this.endingGame = true;
+                    const myId = this.currentPlayer.id, oppId = this.opponentId;
+                    const reg = await getPlayerRegistry();
+                    const me = reg[myId], opp = reg[oppId];
+                    if (!me || !opp) { this.endingGame = false; return; }
+                    let result = game.winner === 'draw' ? 'draw' : (game.winner === this.mySide ? 'win' : 'loss');
+                    const K = 32;
+                    let change = 0;
+                    if (result === 'win') {
+                        const expected = 1 / (1 + Math.pow(10, (opp.elo - me.elo) / 400));
+                        change = Math.round(K * (1 - expected)); me.elo += change; opp.elo -= change; me.wins++; opp.losses++;
+                    } else if (result === 'loss') {
+                        const expected = 1 / (1 + Math.pow(10, (me.elo - opp.elo) / 400));
+                        change = Math.round(K * (1 - expected)); me.elo -= change; opp.elo += change; me.losses++; opp.wins++;
+                    } else { me.draws++; opp.draws++; }
+                    me.gamesPlayed++; opp.gamesPlayed++;
+                    me.inGame = false; me.opponentId = null; me.side = null; me.currentMatch = null;
+                    opp.inGame = false; opp.opponentId = null; opp.side = null; opp.currentMatch = null;
+                    await updatePlayer(myId, me);
+                    await updatePlayer(oppId, opp);
+                    await deleteGame(myId, oppId);
+                    await db.ref('matches/' + matchId(myId, oppId)).remove();
+                    const title = result === 'win' ? 'You Win! 🎉' : result === 'loss' ? 'You Lose 😢' : 'Draw! 🤝';
+                    showResult(title, 'Game over!', `⭐ ${me.elo}`, result === 'draw' ? 'No Elo change' : `${result === 'win' ? '+' : '-'}${change} Elo`);
+                    this.matchFound = false; this.game = null; this.opponentId = null; this.mySide = null; this.endingGame = false;
+                    this.updateUI(); this.renderBoard();
                 },
 
                 async leaveGame() {
+                    if (this.inQueue) await this.leaveQueue();
                     if (this.game && !this.game.gameOver) {
                         this.game.gameOver = true;
                         this.game.winner = this.game.getSide(this.opponentId);
                         await this.handleGameEnd();
                         return;
                     }
-                    if (this.game) {
-                        this.game.deleteFromRegistry();
-                    }
-                    this.matchFound = false;
-                    this.game = null;
-                    this.opponentId = null;
-                    this.mySide = null;
-
-                    const me = this.currentPlayer;
-                    me.inGame = false;
-                    me.opponentId = null;
-                    me.side = null;
-                    const registry = await getPlayerRegistry();
-                    registry[me.id] = me;
-                    savePlayerRegistry(registry);
-
-                    this.updateUI();
-                    this.renderBoard();
+                    if (this.game) await deleteGame(this.currentPlayer.id, this.opponentId);
+                    await updatePlayer(this.currentPlayer.id, { inGame:false, opponentId:null, side:null, currentMatch:null, waitingForMatch:false });
+                    this.matchFound = false; this.game = null; this.opponentId = null; this.mySide = null;
+                    this.updateUI(); this.renderBoard();
                     showToast('Left game');
                 },
 
                 updateUI() {
-                    const me = this.currentPlayer;
-                    document.getElementById('myIdDisplay').textContent = `ID: ${me.id}`;
-                    document.getElementById('myEloDisplay').textContent = `⭐ ${me.elo}`;
-
+                    if (!this.currentPlayer) return;
+                    document.getElementById('myIdDisplay').textContent = `ID: ${this.currentPlayer.id}`;
+                    document.getElementById('myEloDisplay').textContent = `⭐ ${this.currentPlayer.elo || 1500}`;
                     const status = document.getElementById('onlineStatus');
                     const queueStatus = document.getElementById('queueStatus');
-                    const debugInfo = document.getElementById('debugInfo');
-
-                    getQueue().then(queue => {
-                        if (this.inQueue) {
-                            status.textContent = '⏳ In Queue...';
-                            status.className = 'online-status waiting';
-                            queueStatus.textContent = `🔍 Searching... (${queue.length} in queue)`;
-                        } else if (this.matchFound || this.currentPlayer.inGame) {
-                            status.textContent = '● In Game';
-                            status.className = 'online-status ingame';
-                            queueStatus.textContent = this.game && !this.game.gameOver ?
-                                `Playing as ${this.mySide}` : 'Game ended';
-                        } else {
-                            status.textContent = '● Online';
-                            status.className = 'online-status';
-                            queueStatus.textContent = queue.length > 0 ? `${queue.length} player(s) waiting` : '';
-                        }
-
-                        getPlayerRegistry().then(registry => {
-                            debugInfo.textContent = `Queue: ${queue.length} | Players: ${Object.keys(registry).length}`;
-                        });
-
-                        const findBtn = document.getElementById('findOpponentBtn');
-                        if (this.inQueue) {
-                            findBtn.textContent = '⏹ Cancel';
-                            findBtn.className = 'btn-find cancel';
-                            findBtn.disabled = false;
-                        } else if (this.matchFound || this.currentPlayer.inGame) {
-                            findBtn.textContent = '🔍 In Game';
-                            findBtn.className = 'btn-find';
-                            findBtn.disabled = true;
-                        } else {
-                            findBtn.textContent = '🔍 Find Opponent';
-                            findBtn.className = 'btn-find';
-                            findBtn.disabled = false;
-                        }
-                    });
+                    const findBtn = document.getElementById('findOpponentBtn');
+                    if (this.inQueue) {
+                        status.textContent = '⏳ In Queue...'; status.className = 'online-status waiting';
+                        queueStatus.textContent = '🔍 Searching for another human player...';
+                        findBtn.textContent = '⏹ Cancel';
+                    } else if (this.matchFound || this.currentPlayer.inGame) {
+                        status.textContent = '● In Game'; status.className = 'online-status ingame';
+                        queueStatus.textContent = this.game && !this.game.gameOver ? `Playing as ${this.mySide}` : 'Game ended';
+                        findBtn.textContent = '🔍 In Game'; findBtn.disabled = true;
+                    } else {
+                        status.textContent = '● Online'; status.className = 'online-status';
+                        queueStatus.textContent = 'Ready'; findBtn.textContent = '🔍 Find Opponent'; findBtn.disabled = false;
+                    }
                 },
 
                 renderBoard() {
@@ -1176,111 +1009,43 @@ big shout for brave and deepseek </p>
                     const boardEl = document.getElementById('boardOnline');
                     const statusEl = document.getElementById('statusOnline');
                     const claimBtn = document.getElementById('claimDrawOnline');
-
-                    console.log('🎨 Rendering board, game:', game);
-
                     if (!game) {
-                        boardEl.innerHTML =
-                            '<div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Waiting for opponent...</div>';
-                        statusEl.textContent = 'Waiting for opponent...';
-                        claimBtn.classList.remove('visible');
-                        return;
+                        boardEl.innerHTML = '<div style="grid-column:span 3;text-align:center;padding:40px;color:#666;">Find an opponent or accept a challenge.</div>';
+                        statusEl.textContent = 'Waiting for opponent...'; claimBtn.classList.remove('visible'); return;
                     }
-
                     boardEl.innerHTML = '';
-                    for (let r = 0; r < 3; r++) {
-                        for (let c = 0; c < 3; c++) {
-                            const cell = document.createElement('div');
-                            cell.className = 'cell';
-                            cell.dataset.row = r;
-                            cell.dataset.col = c;
-                            const val = game.board[r][c];
-                            if (val) {
-                                cell.textContent = val;
-                                cell.classList.add(val);
-                                if (!game.hasMoved[r][c]) cell.classList.add('inactive');
-                            }
-                            if (game.selectedCell && game.selectedCell.row === r && game.selectedCell.col === c) {
-                                cell.classList.add('selected');
-                            }
-                            if (game.validMoves && game.validMoves.some(m => m.row === r && m.col === c)) {
-                                cell.classList.add('valid-move');
-                            }
-                            cell.addEventListener('click', () => this.handleClick(r, c));
-                            boardEl.appendChild(cell);
-                        }
+                    for (let r=0;r<3;r++) for (let c=0;c<3;c++) {
+                        const cell=document.createElement('div'); cell.className='cell';
+                        const val=game.board[r][c]; cell.dataset.row=r; cell.dataset.col=c;
+                        if(val){cell.textContent=val;cell.classList.add(val);if(!game.hasMoved[r][c])cell.classList.add('inactive');}
+                        if(game.selectedCell&&game.selectedCell.row===r&&game.selectedCell.col===c)cell.classList.add('selected');
+                        if(game.validMoves&&game.validMoves.some(m=>m.row===r&&m.col===c))cell.classList.add('valid-move');
+                        cell.addEventListener('click',()=>this.handleClick(r,c)); boardEl.appendChild(cell);
                     }
-
-                    if (game.gameOver) {
-                        statusEl.textContent = 'Game Over';
-                    } else if (game.currentPlayer === this.mySide) {
-                        statusEl.textContent = `Your turn (${this.mySide})`;
-                    } else {
-                        statusEl.textContent = `Opponent's turn... (${game.currentPlayer})`;
-                    }
-
-                    if (game.drawAvailable && !game.drawClaimed && !game.gameOver) {
-                        claimBtn.classList.add('visible');
-                    } else {
-                        claimBtn.classList.remove('visible');
-                    }
-
-                    const mySide = this.mySide;
-                    const p1 = document.getElementById('playerXOnline');
-                    const p2 = document.getElementById('playerOOnline');
-                    if (mySide === 'X') {
-                        p1.querySelector('h3').textContent = 'You (X)';
-                        p2.querySelector('h3').textContent = 'Opponent (O)';
-                    } else if (mySide === 'O') {
-                        p1.querySelector('h3').textContent = 'Opponent (X)';
-                        p2.querySelector('h3').textContent = 'You (O)';
-                    }
+                    if(game.gameOver) statusEl.textContent='Game Over';
+                    else if(game.currentPlayer===this.mySide) statusEl.textContent=`Your turn (${this.mySide})`;
+                    else statusEl.textContent=`Opponent's turn... (${game.currentPlayer})`;
+                    claimBtn.classList.toggle('visible', !!(game.drawAvailable&&!game.drawClaimed&&!game.gameOver));
+                    const p1=document.getElementById('playerXOnline'), p2=document.getElementById('playerOOnline');
+                    p1.querySelector('h3').textContent=this.mySide==='X'?'You (X)':'Opponent (X)';
+                    p2.querySelector('h3').textContent=this.mySide==='O'?'You (O)':'Opponent (O)';
                 },
 
-                handleClick(row, col) {
-                    const game = this.game;
-                    if (!game || game.gameOver) return;
-                    if (game.currentPlayer !== this.mySide) return;
-
-                    if (game.selectedCell === null) {
-                        if (game.board[row][col] === this.mySide) {
-                            game.selectedCell = { row, col };
-                            game.validMoves = game.getValidMoves(row, col);
-                            this.renderBoard();
-                        }
-                        return;
+                handleClick(row,col) {
+                    const game=this.game; if(!game||game.gameOver||game.currentPlayer!==this.mySide)return;
+                    if(game.selectedCell===null){
+                        if(game.board[row][col]===this.mySide){game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();} return;
                     }
-
-                    const isValid = game.validMoves.some(m => m.row === row && m.col === col);
-                    if (isValid) {
-                        const from = game.selectedCell;
-                        const success = game.makeMove(from.row, from.col, row, col);
-                        if (success) {
-                            game.selectedCell = null;
-                            game.validMoves = [];
-                            game.saveToRegistry();
-                            this.renderBoard();
-
-                            if (game.gameOver) {
-                                this.handleGameEnd();
-                                return;
-                            }
-
-                            if (game.currentPlayer !== this.mySide) {
-                                setTimeout(() => this.simulateOpponentMove(), 600);
-                            }
+                    const valid=game.validMoves.some(m=>m.row===row&&m.col===col);
+                    if(valid){
+                        const from=game.selectedCell;
+                        if(game.makeMove(from.row,from.col,row,col)){
+                            game.selectedCell=null;game.validMoves=[];game.saveToRegistry();this.renderBoard();
+                            if(game.gameOver)this.handleGameEnd();
                         }
-                    } else {
-                        if (game.board[row][col] === this.mySide) {
-                            game.selectedCell = { row, col };
-                            game.validMoves = game.getValidMoves(row, col);
-                            this.renderBoard();
-                        } else {
-                            game.selectedCell = null;
-                            game.validMoves = [];
-                            this.renderBoard();
-                        }
-                    }
+                    } else if(game.board[row][col]===this.mySide){
+                        game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();
+                    } else {game.selectedCell=null;game.validMoves=[];this.renderBoard();}
                 }
             };
 
@@ -2196,7 +1961,7 @@ big shout for brave and deepseek </p>
 
             document.getElementById('helpOnline').addEventListener('click', () => {
                 alert(
-                    'Online Play:\n\n- Your 5-digit ID is saved to your browser\n- Click "Find Opponent" to join the matchmaking queue\n- Or enter an opponent\'s ID and click "Join"\n- X starts, O goes second\n- Win = +10 Elo, Lose = -10 Elo\n- Draw claim after 5 repetitions');
+                    'Online Play:\n\n- Your 5-digit ID is saved to your browser\n- Find Opponent searches for another real player\n- Enter an ID and send a Challenge\n- The other player must Accept or Decline\n- X starts, O goes second\n- No online bot moves are generated\n- Win/Lose changes Elo\n- Draw claim after 5 repetitions');
             });
 
             // ============================================================
@@ -2216,6 +1981,5 @@ big shout for brave and deepseek </p>
             });
         });
     </script>
-
-
-</body></html>
+</body>
+</html>
