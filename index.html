@@ -185,7 +185,6 @@
                     <button class="btn-find" id="findOpponentBtn">🔍 Find Opponent</button>
                     <input type="text" id="opponentIdInput" placeholder="Enter ID" maxlength="5" />
                     <button class="btn-join" id="joinOpponentBtn">Join</button>
-                    <button id="resetOnlineBtn">Leave Game</button>
                 </div>
             </div>
 
@@ -333,7 +332,7 @@
             }
 
             function savePlayerRegistry(registry) {
-                db.ref('players').set(registry);
+                return db.ref('players').set(registry);
             }
 
             function gameKey(player1Id, player2Id) {
@@ -404,12 +403,10 @@
                     if (!player.wins) player.wins = 0;
                     if (!player.losses) player.losses = 0;
                     if (!player.draws) player.draws = 0;
-                    player.inGame = false;
-                    player.opponentId = null;
-                    player.side = null;
-                    player.waitingForMatch = false;
+                    // IMPORTANT: preserve in-game/match fields.
+                    // They are used to reconnect to an unfinished match after a page refresh.
                     registry[savedId] = player;
-                    savePlayerRegistry(registry);
+                    await savePlayerRegistry(registry);
                     return player;
                 }
 
@@ -617,7 +614,7 @@
                 }
 
                 saveToRegistry() {
-                    saveGame(this.player1Id, this.player2Id, {
+                    return saveGame(this.player1Id, this.player2Id, {
                         board: this.board,
                         hasMoved: this.hasMoved,
                         currentPlayer: this.currentPlayer,
@@ -968,21 +965,6 @@
                     this.updateUI(); this.renderBoard();
                 },
 
-                async leaveGame() {
-                    if (this.inQueue) await this.leaveQueue();
-                    if (this.game && !this.game.gameOver) {
-                        this.game.gameOver = true;
-                        this.game.winner = this.game.getSide(this.opponentId);
-                        await this.handleGameEnd();
-                        return;
-                    }
-                    if (this.game) await deleteGame(this.currentPlayer.id, this.opponentId);
-                    await updatePlayer(this.currentPlayer.id, { inGame:false, opponentId:null, side:null, currentMatch:null, waitingForMatch:false });
-                    this.matchFound = false; this.game = null; this.opponentId = null; this.mySide = null;
-                    this.updateUI(); this.renderBoard();
-                    showToast('Left game');
-                },
-
                 updateUI() {
                     if (!this.currentPlayer) return;
                     document.getElementById('myIdDisplay').textContent = `ID: ${this.currentPlayer.id}`;
@@ -1040,7 +1022,18 @@
                     if(valid){
                         const from=game.selectedCell;
                         if(game.makeMove(from.row,from.col,row,col)){
-                            game.selectedCell=null;game.validMoves=[];game.saveToRegistry();this.renderBoard();
+                            game.selectedCell=null;
+                            game.validMoves=[];
+                            // Wait for Firebase to finish saving this move.
+                            // The saved game contains board + turn + moveHistory,
+                            // so a refresh can restore the exact position.
+                            game.saveToRegistry().then(() => {
+                                this.renderBoard();
+                            }).catch(err => {
+                                console.error('Failed to save move:', err);
+                                showToast('Move could not be saved. Please try again.');
+                            });
+                            this.renderBoard();
                             if(game.gameOver)this.handleGameEnd();
                         }
                     } else if(game.board[row][col]===this.mySide){
@@ -1939,16 +1932,6 @@
             document.getElementById('joinOpponentBtn').addEventListener('click', () => {
                 const id = document.getElementById('opponentIdInput').value.trim();
                 onlineManager.joinOpponent(id);
-            });
-
-            document.getElementById('resetOnlineBtn').addEventListener('click', () => {
-                if (onlineManager.game && !onlineManager.game.gameOver) {
-                    if (confirm('Are you sure you want to leave the game? This will count as a loss.')) {
-                        onlineManager.leaveGame();
-                    }
-                } else {
-                    onlineManager.leaveGame();
-                }
             });
 
             claimDrawOnline.addEventListener('click', () => {
