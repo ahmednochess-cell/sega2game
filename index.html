@@ -425,7 +425,7 @@
                 };
                 registry[id] = player;
                 localStorage.setItem(MY_ID_KEY, id);
-                savePlayerRegistry(registry);
+                await savePlayerRegistry(registry);
                 return player;
             }
 
@@ -469,8 +469,11 @@
                     this.p1Side = String(player1Id) < String(player2Id) ? 'X' : 'O';
                     this.p2Side = this.p1Side === 'X' ? 'O' : 'X';
 
+                    // Do not save a fresh/empty board from the constructor.
+                    // When reconnecting after a refresh, startMatch() loads the existing
+                    // Firebase game and then restores it into this object. Saving here
+                    // could race with that load and overwrite the real match state.
                     this.updatePlayers();
-                    this.saveToRegistry();
                 }
 
                 async updatePlayers() {
@@ -673,10 +676,17 @@
                         online: true
                     });
 
-                    await this.cleanOwnQueueEntry();
+                    // On a page refresh, restore the unfinished match BEFORE
+                    // starting normal lobby polling/UI updates.
                     this.listenForChallenges();
                     this.listenForCurrentMatch();
-                    await this.checkForExistingGame();
+
+                    if (this.currentPlayer.inGame && this.currentPlayer.opponentId && this.currentPlayer.currentMatch) {
+                        await this.checkForExistingGame();
+                    } else {
+                        await this.cleanOwnQueueEntry();
+                    }
+
                     this.startQueuePolling();
                     this.updateUI();
                     this.renderBoard();
@@ -888,6 +898,16 @@
                     this.gameListener = subscribeGame(this.currentPlayer.id, opponentId, data => {
                         if (data) this.syncGameData(data);
                     });
+
+                    // The board must be interactive immediately after the
+                    // saved Firebase state has been restored.
+                    this.game.selectedCell = null;
+                    this.game.validMoves = [];
+                    this.currentPlayer.inGame = true;
+                    this.currentPlayer.opponentId = opponentId;
+                    this.currentPlayer.currentMatch = match.id;
+                    this.currentPlayer.side = this.mySide;
+
                     this.updateUI();
                     this.renderBoard();
                     showToast('Match found! You are ' + this.mySide);
@@ -897,9 +917,29 @@
                     const snap = await db.ref('players/' + this.currentPlayer.id).once('value');
                     const me = snap.val() || {};
                     if (!me.currentMatch || !me.opponentId) return;
+
                     const matchSnap = await db.ref('matches/' + me.currentMatch).once('value');
                     const m = matchSnap.val();
-                    if (!m) return;
+
+                    // The match record is the source of truth after refresh.
+                    // Reconnect even if an older browser state has inGame=false.
+                    if (!m) {
+                        await updatePlayer(this.currentPlayer.id, {
+                            inGame: false,
+                            opponentId: null,
+                            side: null,
+                            currentMatch: null
+                        });
+                        this.currentPlayer.inGame = false;
+                        this.currentPlayer.opponentId = null;
+                        this.currentPlayer.side = null;
+                        this.currentPlayer.currentMatch = null;
+                        return;
+                    }
+
+                    this.currentPlayer.inGame = true;
+                    this.currentPlayer.opponentId = me.opponentId;
+                    this.currentPlayer.currentMatch = me.currentMatch;
                     await this.startMatch(me.opponentId, m);
                 },
 
@@ -917,18 +957,30 @@
 
                 syncGameData(data) {
                     if (!data || !this.game) return;
-                    if ((data.moveHistory || []).length < (this.game.moveHistory || []).length) return;
-                    if ((data.moveHistory || []).length === (this.game.moveHistory || []).length && data.currentPlayer === this.game.currentPlayer) return;
-                    this.game.board = data.board;
-                    this.game.hasMoved = data.hasMoved;
-                    this.game.currentPlayer = data.currentPlayer;
-                    this.game.gameOver = data.gameOver;
-                    this.game.winner = data.winner;
+
+                    // Firebase is the shared source of truth. Always accept a newer
+                    // game snapshot so both browsers can keep playing without refresh.
+                    const remoteMoves = data.moveHistory || [];
+                    const localMoves = this.game.moveHistory || [];
+                    if (remoteMoves.length < localMoves.length) return;
+                    if (remoteMoves.length === localMoves.length &&
+                        data.currentPlayer === this.game.currentPlayer &&
+                        JSON.stringify(data.board) === JSON.stringify(this.game.board)) {
+                        return;
+                    }
+
+                    this.game.board = data.board || this.game.board;
+                    this.game.hasMoved = data.hasMoved || this.game.hasMoved;
+                    this.game.currentPlayer = data.currentPlayer || this.game.currentPlayer;
+                    this.game.gameOver = !!data.gameOver;
+                    this.game.winner = data.winner || null;
                     this.game.positionHistory = data.positionHistory || [];
                     this.game.positionCounts = data.positionCounts || {};
-                    this.game.drawAvailable = data.drawAvailable || false;
-                    this.game.drawClaimed = data.drawClaimed || false;
-                    this.game.moveHistory = data.moveHistory || [];
+                    this.game.drawAvailable = !!data.drawAvailable;
+                    this.game.drawClaimed = !!data.drawClaimed;
+                    this.game.moveHistory = remoteMoves;
+                    this.game.selectedCell = null;
+                    this.game.validMoves = [];
                     this.renderBoard();
                     if (this.game.gameOver) this.handleGameEnd();
                     else this.updateUI();
@@ -1013,32 +1065,51 @@
                     p2.querySelector('h3').textContent=this.mySide==='O'?'You (O)':'Opponent (O)';
                 },
 
-                handleClick(row,col) {
-                    const game=this.game; if(!game||game.gameOver||game.currentPlayer!==this.mySide)return;
+                async handleClick(row,col) {
+                    const game=this.game;
+                    if(!game || game.gameOver || game.currentPlayer!==this.mySide) return;
+
                     if(game.selectedCell===null){
-                        if(game.board[row][col]===this.mySide){game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();} return;
+                        if(game.board[row][col]===this.mySide){
+                            game.selectedCell={row,col};
+                            game.validMoves=game.getValidMoves(row,col);
+                            this.renderBoard();
+                        }
+                        return;
                     }
+
                     const valid=game.validMoves.some(m=>m.row===row&&m.col===col);
                     if(valid){
                         const from=game.selectedCell;
                         if(game.makeMove(from.row,from.col,row,col)){
                             game.selectedCell=null;
                             game.validMoves=[];
-                            // Wait for Firebase to finish saving this move.
-                            // The saved game contains board + turn + moveHistory,
-                            // so a refresh can restore the exact position.
-                            game.saveToRegistry().then(() => {
-                                this.renderBoard();
-                            }).catch(err => {
+                            this.renderBoard();
+
+                            // IMPORTANT: wait for Firebase to finish writing this move
+                            // before allowing game-end cleanup. This prevents a fast
+                            // second move/browser event from being lost.
+                            try {
+                                await game.saveToRegistry();
+                            } catch(err) {
                                 console.error('Failed to save move:', err);
                                 showToast('Move could not be saved. Please try again.');
-                            });
-                            this.renderBoard();
-                            if(game.gameOver)this.handleGameEnd();
+                                return;
+                            }
+
+                            // The Firebase listener on the other browser receives this
+                            // exact saved state automatically; no refresh is needed.
+                            if(game.gameOver) await this.handleGameEnd();
                         }
                     } else if(game.board[row][col]===this.mySide){
-                        game.selectedCell={row,col};game.validMoves=game.getValidMoves(row,col);this.renderBoard();
-                    } else {game.selectedCell=null;game.validMoves=[];this.renderBoard();}
+                        game.selectedCell={row,col};
+                        game.validMoves=game.getValidMoves(row,col);
+                        this.renderBoard();
+                    } else {
+                        game.selectedCell=null;
+                        game.validMoves=[];
+                        this.renderBoard();
+                    }
                 }
             };
 
